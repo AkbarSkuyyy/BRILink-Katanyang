@@ -150,6 +150,9 @@ $current_page = basename($_SERVER['PHP_SELF']);
                 
                 <li class="nav-item"><a href="monitoring_receh.php" class="nav-link-modern text-decoration-none <?= $current_page == 'monitoring_receh.php' ? 'active' : ''; ?>"><i class="bi bi-bar-chart"></i> Monitoring Receh</a></li>
                 <li class="nav-item"><a href="laporan_global.php" class="nav-link-modern text-decoration-none <?= $current_page == 'laporan_global.php' ? 'active' : ''; ?>"><i class="bi bi-file-earmark-bar-graph-fill"></i> Laporan Global</a></li>
+                
+                <li class="nav-item"><a href="buku_besar.php" class="nav-link-modern text-decoration-none <?= $current_page == 'buku_besar.php' ? 'active' : ''; ?>"><i class="bi bi-book-half"></i> Buku Besar</a></li>
+                <li class="nav-item"><a href="log_aktivitas.php" class="nav-link-modern text-decoration-none <?= $current_page == 'log_aktivitas.php' ? 'active' : ''; ?>"><i class="bi bi-shield-lock"></i> Log Keamanan</a></li>
             <?php else: ?>
                 <li class="nav-item"><a href="user_dashboard.php" class="nav-link-modern text-decoration-none <?= $current_page == 'user_dashboard.php' ? 'active' : ''; ?>"><i class="bi bi-house-door-fill"></i> Beranda</a></li>
                 <li class="nav-item"><a href="set_modal.php" class="nav-link-modern text-decoration-none <?= $current_page == 'set_modal.php' ? 'active' : ''; ?>"><i class="bi bi-wallet-fill"></i> Set Modal Laci</a></li>

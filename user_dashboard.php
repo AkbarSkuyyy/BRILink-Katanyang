@@ -38,6 +38,10 @@ $sid = $shift_data ? $shift_data['id'] : 0;
 // =========================================================================
 // 1. AUTO-UPGRADE DATABASE & AUTO-RESET STOK RECEH HARIAN 
 // =========================================================================
+    
+// FIX: Mengubah kolom jenis_transaksi menjadi VARCHAR agar bisa menerima layanan dinamis seperti "Buka Rekening"
+$conn->query("ALTER TABLE transactions MODIFY jenis_transaksi VARCHAR(100) NOT NULL");    
+
 $check_receh = $conn->query("SHOW COLUMNS FROM uang_receh LIKE 'last_updated'");
 if ($check_receh && $check_receh->num_rows == 0) {
     $conn->query("ALTER TABLE uang_receh ADD last_updated DATE NULL DEFAULT NULL");

@@ -30,6 +30,10 @@ if (isset($_POST['login_kasir'])) {
             $_SESSION['nama_cabang'] = $row['nama_cabang']; 
             $_SESSION['shift_ke'] = $row['shift_ke'];       
             $_SESSION['username'] = $row['username'];       
+            
+            // --- MENCATAT LOG AKTIVITAS KASIR ---
+            catatLog($conn, "Berhasil Login ke sistem sebagai Kasir.", $row['id']);
+            
             header("Location: user_dashboard.php");
             exit;
         } else {
@@ -56,6 +60,10 @@ if (isset($_POST['login_admin'])) {
             $_SESSION['user_id'] = $row['id'];
             $_SESSION['role'] = $row['role'];
             $_SESSION['username'] = $row['username'];
+            
+            // --- MENCATAT LOG AKTIVITAS ADMIN ---
+            catatLog($conn, "Berhasil Login ke sistem sebagai Admin Pusat.", $row['id']);
+            
             header("Location: admin_dashboard.php");
             exit;
         } else {

@@ -114,4 +114,18 @@ function notifUpdateReceh($conn, $cabang_id, $nama_cabang, $total_receh) {
     }
     sendTelegramNotif($pesan);
 }
+
+// 5. FORMAT PESAN: LOG KEAMANAN SISTEM (BARU)
+function notifKeamanan($aktivitas, $pelaku = "Sistem", $ip_address = "Unknown") {
+    $waktu = date('d/m/Y H:i:s');
+    
+    $pesan = "🛡️ <b>PERINGATAN KEAMANAN</b>\n\n";
+    $pesan .= "Aktivitas: <b>$aktivitas</b>\n";
+    $pesan .= "Pelaku/Akun: <b>$pelaku</b>\n";
+    $pesan .= "IP Address: <code>$ip_address</code>\n";
+    $pesan .= "Waktu: <i>$waktu WIB</i>\n\n";
+    $pesan .= "<i>Harap pantau melalui menu Log Aktivitas di Dashboard Admin.</i>";
+    
+    sendTelegramNotif($pesan);
+}
 ?>
