@@ -1,5 +1,6 @@
 <?php
 require 'config.php';
+if (session_status() == PHP_SESSION_NONE) { session_start(); }
 if (!isset($_SESSION['role']) || $_SESSION['role'] != 'user') { header("Location: index.php"); exit; }
 
 $user_id = $_SESSION['user_id'];
@@ -11,13 +12,18 @@ $row_user = $q_user->fetch_assoc();
 $cabang_id = !empty($row_user['cabang_id']) ? $row_user['cabang_id'] : 0;
 
 $assigned_banks_str = $row_user['assigned_banks'] ?? '';
-$assigned_banks = $assigned_banks_str ? explode(',', $assigned_banks_str) : [];
-$jumlah_rek = count($assigned_banks); // Menghitung berapa rekening yang diizinkan
+// Gunakan array_map 'trim' agar tidak ada spasi kotor yang membuat saldo gagal terbaca
+$assigned_banks = $assigned_banks_str ? array_map('trim', explode(',', $assigned_banks_str)) : [];
+$jumlah_rek = count($assigned_banks); 
 
-// Peta database rekening
+// PERBAIKAN: Peta database rekening menggunakan kolom ALIAS (Struktur Database Baru)
 $db_map = [];
-$q_rek = $conn->query("SELECT nama_bank, kolom_db FROM rekening");
-while($r = $q_rek->fetch_assoc()) { $db_map[$r['nama_bank']] = $r['kolom_db']; }
+$q_rek = $conn->query("SELECT alias, kolom_db FROM rekening");
+if($q_rek) {
+    while($r = $q_rek->fetch_assoc()) { 
+        $db_map[$r['alias']] = $r['kolom_db']; 
+    }
+}
 
 $q_cek_beku = $conn->query("SELECT s.id FROM shifts s JOIN users u ON s.user_id = u.id WHERE u.cabang_id = '$cabang_id' AND s.tanggal = '$tanggal_hari_ini' AND s.shift_ke = 2 AND s.status = 'selesai'");
 $cabang_dibekukan = ($q_cek_beku->num_rows > 0);
@@ -73,7 +79,7 @@ if (isset($_POST['simpan_transaksi']) && $status_shift_aktif && !$cabang_dibekuk
     $stmt->bind_param("iissssds", $user_id, $shift_id, $tanggal_hari_ini, $jenis, $bank_agen, $nominal, $admin, $ket);
     
     if($stmt->execute()) { 
-        $_SESSION['flash_success'] = "Transaksi Berhasil Disimpan!";
+        $_SESSION['notif'] = ['type' => 'success', 'msg' => 'Transaksi Berhasil Disimpan!'];
         header("Location: user_dashboard.php"); exit; 
     }
 }
@@ -99,14 +105,17 @@ if ($status_shift_aktif) {
 
     $saldo_fisik_sekarang = $shift_data['modal_awal'] + $uang_masuk - $uang_keluar + $admin_hari_ini;
     
-    // HITUNG HANYA BANK YANG DIIZINKAN
+    // HITUNG HANYA BANK YANG DIIZINKAN (Berdasarkan ALIAS)
     foreach($assigned_banks as $b_name) {
         if(isset($db_map[$b_name])) {
             $b_col = $db_map[$b_name];
             $q_in_b = $conn->query("SELECT SUM(nominal) as tot FROM transactions WHERE shift_id = '$sid' AND jenis_transaksi = 'Tarik Tunai' AND bank_agen = '$b_name'");
             $q_out_b = $conn->query("SELECT SUM(nominal) as tot FROM transactions WHERE shift_id = '$sid' AND jenis_transaksi NOT IN ('Tarik Tunai', 'Tukar Uang') AND bank_agen = '$b_name'");
             
-            $saldo_bank_ini = $shift_data[$b_col] + ($q_in_b->fetch_assoc()['tot'] ?? 0) - ($q_out_b->fetch_assoc()['tot'] ?? 0);
+            // Cek apakah kolom database benar-benar ada di tabel shift agar tidak error
+            $modal_bank = isset($shift_data[$b_col]) ? (float)$shift_data[$b_col] : 0;
+            
+            $saldo_bank_ini = $modal_bank + ($q_in_b->fetch_assoc()['tot'] ?? 0) - ($q_out_b->fetch_assoc()['tot'] ?? 0);
             $total_saldo_digital += $saldo_bank_ini;
         }
     }
@@ -125,13 +134,13 @@ for ($i = 6; $i >= 0; $i--) {
 <!DOCTYPE html>
 <html lang="id">
 <head>
-    <title>Dashboard Modern BRILink</title>
+    <title>Dashboard Kasir BRILink</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11.7.3/dist/sweetalert2.min.css" rel="stylesheet">
     <style> 
         :root { --bg-body: #f4f7fa; --bri-blue: #00529C; --bri-light-blue: #e6f0ff; --bri-black: #1a1a1a; --bri-white: #ffffff; }
         body { font-family: 'Montserrat', sans-serif; background-color: var(--bg-body); }
@@ -155,6 +164,7 @@ for ($i = 6; $i >= 0; $i--) {
         .modal-content { border-radius: 24px; border: none; box-shadow: 0 20px 40px rgba(0,0,0,0.15); }
         .bg-light-blue-box { background-color: var(--bri-light-blue); border-radius: 16px; }
         .input-error { border: 2px solid #dc3545 !important; background-color: #fff3f3 !important; }
+        .swal2-popup { font-family: 'Montserrat', sans-serif !important; border-radius: 16px !important; }
         @media (max-width: 767.98px) { .main-content { margin-left: 0 !important; padding: 20px 15px !important; padding-top: 85px !important; } .btn-input-modern { width: 100%; text-align: center; } }
     </style>
 </head>
@@ -163,8 +173,8 @@ for ($i = 6; $i >= 0; $i--) {
     <div class="main-content">
         <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-4 gap-3">
             <div>
-                <h3 class="fw-extrabold mb-1" style="color: var(--bri-black); letter-spacing: -0.5px;">Halo, Semangat Bekerja! ðŸ‘‹</h3>
-                <p class="fw-medium mb-0" style="color: #6c757d;"><?= date('l, d F Y', strtotime($tanggal_hari_ini)); ?> â€¢ Shift <?= isset($_SESSION['shift_ke']) ? $_SESSION['shift_ke'] : '-'; ?></p>
+                <h3 class="fw-extrabold mb-1" style="color: var(--bri-black); letter-spacing: -0.5px;">Halo, Semangat Bekerja! 👋</h3>
+                <p class="fw-medium mb-0" style="color: #6c757d;"><?= date('l, d F Y', strtotime($tanggal_hari_ini)); ?> • Shift <?= isset($_SESSION['shift_ke']) ? $_SESSION['shift_ke'] : '-'; ?></p>
             </div>
             
             <?php if ($cabang_dibekukan): ?>
@@ -258,7 +268,7 @@ for ($i = 6; $i >= 0; $i--) {
                         <label class="form-label text-muted small fw-bold text-uppercase tracking-wide">Rekening Agen (Sumber Dana / Tujuan)</label>
                         <select name="bank_agen" id="selectBankAgen" class="form-select form-select-lg" style="border-radius: 12px;" required>
                             <?php foreach($assigned_banks as $bank): ?>
-                                <option value="<?= $bank ?>"><?= $bank ?></option>
+                                <option value="<?= htmlspecialchars($bank) ?>"><?= htmlspecialchars($bank) ?></option>
                             <?php endforeach; ?>
                         </select>
                     </div>
@@ -322,6 +332,7 @@ for ($i = 6; $i >= 0; $i--) {
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11.7.3/dist/sweetalert2.all.min.js"></script>
 
 <script>
     document.querySelectorAll('.format-rupiah').forEach(function(input) {
@@ -404,7 +415,7 @@ for ($i = 6; $i >= 0; $i--) {
             let qty = parseInt(el.value) || 0; let nilai = parseInt(el.getAttribute('data-nilai'));
             let stokMax = parseInt(el.getAttribute('data-stok')); let label = el.getAttribute('data-label');
             if (qty > 0) { 
-                if (qty > stokMax) { validStok = false; errMsg += `â€¢ Sisa stok uang ${label} hanya ${stokMax} lembar! <br>`; el.classList.add('input-error'); }
+                if (qty > stokMax) { validStok = false; errMsg += `• Sisa stok uang ${label} hanya ${stokMax} lembar! <br>`; el.classList.add('input-error'); }
                 else { el.classList.remove('input-error'); totalOut += (qty * nilai); detailOut.push((nilai >= 1000 ? nilai/1000 + 'k' : nilai) + "x" + qty); }
             } else { el.classList.remove('input-error'); }
         });
@@ -428,8 +439,12 @@ for ($i = 6; $i >= 0; $i--) {
     document.querySelectorAll('.out-pecahan').forEach(item => { item.addEventListener('input', hitungPecahan); });
 
     function bukaModal(jenisLayanan) {
-        <?php if ($cabang_dibekukan): ?> alert("MAAF! Cabang ditutup."); return;
-        <?php elseif (!$status_shift_aktif): ?> alert("Harap Set Modal Awal Anda."); window.location.href = "set_modal.php"; return; <?php endif; ?>
+        <?php if ($cabang_dibekukan): ?> 
+            Swal.fire({ icon: 'error', title: 'Terkunci', text: 'MAAF! Cabang ditutup untuk hari ini.' }); return;
+        <?php elseif (!$status_shift_aktif): ?> 
+            Swal.fire({ icon: 'warning', title: 'Perhatian', text: 'Harap Set Modal Awal Anda terlebih dahulu.' }).then(() => { window.location.href = "set_modal.php"; }); return; 
+        <?php endif; ?>
+        
         let selectEl = document.getElementById('selectJenis');
         if (!Array.from(selectEl.options).some(opt => opt.value === jenisLayanan)) selectEl.add(new Option(jenisLayanan, jenisLayanan));
         selectEl.value = jenisLayanan; document.getElementById('inputNominal').value = ''; document.getElementById('inputAdmin').value = ''; document.getElementById('inputKeterangan').value = ''; document.getElementById('alertStokLimit').style.display = 'none';
@@ -450,12 +465,25 @@ for ($i = 6; $i >= 0; $i--) {
 <script>
     const ctx = document.getElementById('pendapatanChart').getContext('2d');
     new Chart(ctx, { type: 'line', data: { labels: <?= json_encode($grafik_tanggal); ?>, datasets: [{ label: 'Pendapatan', data: <?= json_encode($grafik_pendapatan); ?>, borderColor: '#00529C', backgroundColor: 'rgba(0, 82, 156, 0.1)', borderWidth: 3, fill: true, tension: 0.4 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { border: {display: false}, beginAtZero: true }, x: { grid: { display: false } } } } });
-</script>
 
-<?php if (isset($_SESSION['flash_success'])): ?>
-    <script>
-        Swal.fire({ title: 'Berhasil!', text: '<?= $_SESSION['flash_success']; ?>', icon: 'success', confirmButtonColor: '#00529C' });
-    </script>
-<?php unset($_SESSION['flash_success']); endif; ?>
+    // Toast Notification SweetAlert2
+    <?php if (isset($_SESSION['notif'])): ?>
+        const Toast = Swal.mixin({
+            toast: true,
+            position: 'top-end',
+            showConfirmButton: false,
+            timer: 3500,
+            timerProgressBar: true,
+            didOpen: (toast) => {
+                toast.addEventListener('mouseenter', Swal.stopTimer)
+                toast.addEventListener('mouseleave', Swal.resumeTimer)
+            }
+        });
+        Toast.fire({
+            icon: '<?= $_SESSION['notif']['type']; ?>',
+            title: '<?= $_SESSION['notif']['msg']; ?>'
+        });
+    <?php unset($_SESSION['notif']); endif; ?>
+</script>
 </body>
 </html>

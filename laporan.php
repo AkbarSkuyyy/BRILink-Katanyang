@@ -11,12 +11,10 @@ $row_user = $q_user->fetch_assoc();
 $assigned_banks_str = $row_user['assigned_banks'] ?? '';
 $assigned_banks = $assigned_banks_str ? explode(',', $assigned_banks_str) : [];
 
-// AMBIL DAFTAR REKENING & KOLOM DB DARI TABEL MASTER SECARA DINAMIS
+// AMBIL DAFTAR REKENING & KOLOM DB DARI TABEL MASTER (Dinamis)
 $db_map = [];
-$q_rek = $conn->query("SELECT nama_bank, kolom_db FROM rekening");
-while($r = $q_rek->fetch_assoc()) { 
-    $db_map[$r['nama_bank']] = $r['kolom_db']; 
-}
+$q_rek = $conn->query("SELECT alias, kolom_db FROM rekening");
+while($r = $q_rek->fetch_assoc()) { $db_map[$r['alias']] = $r['kolom_db']; }
 
 // Dapatkan Shift Kasir yang sedang berjalan
 $q_shift_aktif = $conn->query("SELECT * FROM shifts WHERE user_id = '$user_id' AND tanggal = '$tanggal_hari_ini' ORDER BY id DESC LIMIT 1");

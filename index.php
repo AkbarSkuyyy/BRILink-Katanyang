@@ -1,5 +1,7 @@
 <?php
 require 'config.php';
+// Pastikan session berjalan
+if (session_status() == PHP_SESSION_NONE) { session_start(); }
 
 // Jika sudah login, tendang ke dashboard masing-masing
 if (isset($_SESSION['role'])) {
@@ -7,6 +9,8 @@ if (isset($_SESSION['role'])) {
     else header("Location: user_dashboard.php");
     exit;
 }
+
+$error_notif = "";
 
 // PROSES LOGIN KASIR (USER)
 if (isset($_POST['login_kasir'])) {
@@ -29,10 +33,10 @@ if (isset($_POST['login_kasir'])) {
             header("Location: user_dashboard.php");
             exit;
         } else {
-            echo "<script>alert('PIN Kasir Salah!');</script>";
+            $error_notif = "PIN Keamanan Kasir yang dimasukkan SALAH!";
         }
     } else {
-        echo "<script>alert('Akun untuk Cabang dan Shift ini tidak ditemukan!');</script>";
+        $error_notif = "Akun untuk Cabang dan Shift ini tidak ditemukan!";
     }
 }
 
@@ -55,10 +59,10 @@ if (isset($_POST['login_admin'])) {
             header("Location: admin_dashboard.php");
             exit;
         } else {
-            echo "<script>alert('PIN/Password Admin Salah!');</script>";
+            $error_notif = "PIN / Password Admin SALAH!";
         }
     } else {
-        echo "<script>alert('Username Admin tidak ditemukan!');</script>";
+        $error_notif = "Username Admin tidak dikenali sistem!";
     }
 }
 ?>
@@ -70,6 +74,7 @@ if (isset($_POST['login_admin'])) {
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11.7.3/dist/sweetalert2.min.css" rel="stylesheet">
     <style> 
         /* PALET WARNA MODERN */
         :root {
@@ -177,19 +182,8 @@ if (isset($_POST['login_admin'])) {
             color: white;
         }
 
-        /* Logo/Header icon */
-        .logo-circle {
-            width: 70px;
-            height: 70px;
-            background-color: var(--bri-light-blue);
-            color: var(--bri-blue);
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 34px;
-            margin: 0 auto 15px auto;
-        }
+        /* Styling Modal SweetAlert Font */
+        .swal2-popup { font-family: 'Montserrat', sans-serif !important; border-radius: 20px !important; }
 
         @media (max-width: 576px) {
             .login-card { padding: 30px 20px; border-radius: 24px; }
@@ -201,9 +195,9 @@ if (isset($_POST['login_admin'])) {
     <div class="container d-flex justify-content-center">
         <div class="login-card" style="width: 100%; max-width: 440px;">
             <div class="text-center mb-4">
-                <div class="logo-circle">
-                    <i class="bi bi-shield-lock-fill"></i>
-                </div>
+                
+                <img src="assets/img/logo-katanyang.png" alt="Logo" style="height: 65px; margin-bottom: 15px; object-fit: contain;">
+                
                 <h3 class="fw-extrabold mb-1" style="color: var(--bri-black); letter-spacing: -1px;">BRILink Portal</h3>
                 <p class="fw-medium text-muted small">Sistem Informasi Manajemen Terpadu</p>
             </div>
@@ -234,11 +228,13 @@ if (isset($_POST['login_admin'])) {
                         </div>
                         
                         <div class="mb-3">
-                            <label class="form-label">Shift Kerja</label>
+                            <label class="form-label">Slot Shift Kerja</label>
                             <select name="shift_ke" class="form-select" required>
                                 <option value="" disabled selected>-- Tentukan Shift --</option>
-                                <option value="1">Shift 1 (Pagi/Siang)</option>
-                                <option value="2">Shift 2 (Sore/Malam)</option>
+                                <option value="1">Shift 1 (Utama / Fleksibel)</option>
+                                <option value="2">Shift 2 (Lanjutan / Fleksibel)</option>
+                                <option value="3">Shift 3 (Bantuan / Ekstra)</option>
+                                <option value="4">Shift 4 (Bantuan / Ekstra)</option>
                             </select>
                         </div>
 
@@ -282,5 +278,19 @@ if (isset($_POST['login_admin'])) {
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11.7.3/dist/sweetalert2.all.min.js"></script>
+
+    <?php if (!empty($error_notif)): ?>
+    <script>
+        Swal.fire({
+            icon: 'error',
+            title: 'Gagal Masuk!',
+            text: '<?= $error_notif; ?>',
+            confirmButtonColor: '#00529C',
+            background: '#ffffff',
+            color: '#1a1a1a'
+        });
+    </script>
+    <?php endif; ?>
 </body>
 </html>

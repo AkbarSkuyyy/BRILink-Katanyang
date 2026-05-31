@@ -29,10 +29,68 @@ $total_cabang = !empty($row_total_cabang['total']) ? $row_total_cabang['total'] 
 
 
 // ==========================================
-// 2. LOGIKA FILTER GRAFIK & DATA (DIPERBAIKI)
+// 2. KALKULASI SALDO MULTI-CABANG & REKENING (DIPERBAIKI)
 // ==========================================
+$data_monitoring = [];
 
-// Fungsi Bantuan (Helper) agar PHP membaca angka dari Database dengan aman & akurat
+// Mengambil semua shift aktif beserta seluruh kolom rekening dinamis
+$q_shift_aktif = $conn->query("
+    SELECT s.*, c.nama_cabang, u.username
+    FROM shifts s
+    JOIN users u ON s.user_id = u.id
+    JOIN cabang c ON u.cabang_id = c.id
+    WHERE s.tanggal = '$tanggal_hari_ini'
+    ORDER BY c.nama_cabang ASC, s.shift_ke ASC
+");
+
+if ($q_shift_aktif && $q_shift_aktif->num_rows > 0) {
+    while($row = $q_shift_aktif->fetch_assoc()){
+        $shift_id_saat_ini = $row['id']; // KUNCI PERBAIKAN: Mutasi dihitung berdasarkan Shift ID, BUKAN User ID!
+        $cabang = $row['nama_cabang'];
+        
+        // A. Hitung Semua Modal Laci & Bank
+        $total_semua_modal = 0;
+        foreach($row as $key => $value) {
+            if (strpos($key, 'modal_') === 0) { 
+                $total_semua_modal += (float)$value;
+            }
+        }
+
+        // B. Hitung Mutasi Hari Ini khusus pada Laci Shift Ini Saja
+        $q_mutasi = $conn->query("SELECT jenis_transaksi, nominal, admin_fee FROM transactions WHERE shift_id = '$shift_id_saat_ini'");
+        $total_in = 0;
+        $total_out = 0;
+        $total_fee = 0;
+        
+        while($trx = $q_mutasi->fetch_assoc()){
+            $total_fee += (float)$trx['admin_fee'];
+            if ($trx['jenis_transaksi'] == 'Tarik Tunai') {
+                $total_out += (float)$trx['nominal']; // Uang keluar dari kasir
+            } elseif ($trx['jenis_transaksi'] != 'Tukar Uang') {
+                $total_in += (float)$trx['nominal']; // Uang masuk ke kasir
+            }
+        }
+        
+        // Saldo Riil Keseluruhan Pekerja Tersebut
+        $saldo_berjalan = $total_semua_modal + $total_in - $total_out + $total_fee;
+        $row['saldo_berjalan'] = $saldo_berjalan;
+        
+        // C. Kelompokkan ke dalam array per cabang
+        if (!isset($data_monitoring[$cabang])) {
+            $data_monitoring[$cabang] = [
+                'total_saldo_cabang' => 0,
+                'shifts' => []
+            ];
+        }
+        
+        $data_monitoring[$cabang]['shifts'][] = $row;
+        $data_monitoring[$cabang]['total_saldo_cabang'] += $saldo_berjalan;
+    }
+}
+
+// ==========================================
+// 3. LOGIKA FILTER GRAFIK
+// ==========================================
 function fetchSumVal($conn, $sql) {
     $result = $conn->query($sql);
     if ($result && $result->num_rows > 0) {
@@ -43,19 +101,14 @@ function fetchSumVal($conn, $sql) {
 }
 
 $periode = isset($_GET['periode']) ? $_GET['periode'] : 'mingguan';
-
-$grafik_label = [];
-$grafik_laba = [];
-$bal_in = [];
-$bal_out = [];
-$tgl_start = date('Y-m-d', strtotime("-6 days")); // Default mingguan
+$grafik_label = []; $grafik_laba = []; $bal_in = []; $bal_out = [];
+$tgl_start = date('Y-m-d', strtotime("-6 days")); 
 
 if ($periode == 'tahunan') {
     $tgl_start = date('Y-m-d', strtotime("-11 months"));
     for ($i = 11; $i >= 0; $i--) {
         $m = date('Y-m', strtotime("-$i months"));
         $grafik_label[] = date('M y', strtotime($m . '-01'));
-        
         $grafik_laba[] = fetchSumVal($conn, "SELECT SUM(admin_fee) as val FROM transactions WHERE DATE_FORMAT(tanggal, '%Y-%m') = '$m'");
         $bal_in[]      = fetchSumVal($conn, "SELECT SUM(nominal) as val FROM transactions WHERE DATE_FORMAT(tanggal, '%Y-%m') = '$m' AND jenis_transaksi NOT IN ('Tarik Tunai', 'Tukar Uang')");
         $bal_out[]     = fetchSumVal($conn, "SELECT SUM(nominal) as val FROM transactions WHERE DATE_FORMAT(tanggal, '%Y-%m') = '$m' AND jenis_transaksi = 'Tarik Tunai'");
@@ -65,29 +118,23 @@ if ($periode == 'tahunan') {
     for ($i = 29; $i >= 0; $i--) {
         $d = date('Y-m-d', strtotime("-$i days"));
         $grafik_label[] = date('d/m', strtotime($d));
-        
         $grafik_laba[] = fetchSumVal($conn, "SELECT SUM(admin_fee) as val FROM transactions WHERE tanggal = '$d'");
         $bal_in[]      = fetchSumVal($conn, "SELECT SUM(nominal) as val FROM transactions WHERE tanggal = '$d' AND jenis_transaksi NOT IN ('Tarik Tunai', 'Tukar Uang')");
         $bal_out[]     = fetchSumVal($conn, "SELECT SUM(nominal) as val FROM transactions WHERE tanggal = '$d' AND jenis_transaksi = 'Tarik Tunai'");
     }
 } else { 
-    // Mingguan
     for ($i = 6; $i >= 0; $i--) {
         $d = date('Y-m-d', strtotime("-$i days"));
         $grafik_label[] = date('d/m', strtotime($d));
-        
         $grafik_laba[] = fetchSumVal($conn, "SELECT SUM(admin_fee) as val FROM transactions WHERE tanggal = '$d'");
         $bal_in[]      = fetchSumVal($conn, "SELECT SUM(nominal) as val FROM transactions WHERE tanggal = '$d' AND jenis_transaksi NOT IN ('Tarik Tunai', 'Tukar Uang')");
         $bal_out[]     = fetchSumVal($conn, "SELECT SUM(nominal) as val FROM transactions WHERE tanggal = '$d' AND jenis_transaksi = 'Tarik Tunai'");
     }
 }
 
-// Data Pie Chart (Layanan Terlaris berdasarkan periode filter)
 $kondisi_tgl = "WHERE tanggal >= '$tgl_start'";
-$pie_label = [];
-$pie_data = [];
+$pie_label = []; $pie_data = [];
 $q_pie = $conn->query("SELECT jenis_transaksi, COUNT(id) as jml FROM transactions $kondisi_tgl GROUP BY jenis_transaksi ORDER BY jml DESC LIMIT 6");
-
 if ($q_pie) {
     while($r = $q_pie->fetch_assoc()) {
         $pie_label[] = $r['jenis_transaksi'];
@@ -163,7 +210,7 @@ if ($q_pie) {
             </a>
         </div>
 
-        <div class="row g-3 mb-4">
+        <div class="row g-3 mb-5">
             <div class="col-12 col-sm-6 col-xl-3">
                 <div class="metric-card bg-saldo">
                     <p class="mb-1 fw-semibold small opacity-75 text-uppercase tracking-wide">Cabang Buka</p>
@@ -192,6 +239,50 @@ if ($q_pie) {
                     <i class="bi bi-cash-stack" style="color: var(--bri-blue); opacity: 0.05;"></i>
                 </div>
             </div>
+        </div>
+
+        <div class="d-flex align-items-center mb-3 mt-2">
+            <h4 class="fw-extrabold mb-0" style="color: var(--bri-black);"><i class="bi bi-display me-2 text-primary"></i>Live Monitoring Saldo Tiap Cabang</h4>
+        </div>
+        
+        <div class="row g-4 mb-5">
+            <?php if (!empty($data_monitoring)): ?>
+                <?php foreach ($data_monitoring as $cabang => $data): ?>
+                <div class="col-md-6 col-xl-4">
+                    <div class="modern-card h-100 border-top border-4" style="border-color: var(--bri-blue) !important; padding: 20px;">
+                        <div class="d-flex justify-content-between align-items-center mb-3 pb-3 border-bottom">
+                            <h6 class="fw-bolder text-dark mb-0 text-truncate pe-2"><i class="bi bi-shop me-2" style="color: var(--bri-blue);"></i><?= htmlspecialchars($cabang); ?></h6>
+                            <span class="badge bg-success text-white fw-bold px-3 py-2 rounded-pill shadow-sm" style="font-size: 13px;">
+                                Total: Rp <?= number_format($data['total_saldo_cabang'], 0, ',', '.'); ?>
+                            </span>
+                        </div>
+                        
+                        <div class="d-flex flex-column gap-3">
+                            <?php foreach ($data['shifts'] as $shift): ?>
+                            <div class="p-3 rounded-4 shadow-sm" style="background-color: #f8fbff; border: 1px solid var(--bri-light-blue);">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <span class="fw-bold text-dark" style="font-size: 14px;">Shift <?= $shift['shift_ke']; ?> (<?= htmlspecialchars($shift['username']); ?>)</span>
+                                    <?php $bg = ($shift['status'] == 'aktif') ? 'bg-primary' : 'bg-secondary'; ?>
+                                    <span class="badge <?= $bg; ?> rounded-pill" style="font-size: 11px;"><?= ucfirst($shift['status']); ?></span>
+                                </div>
+                                <div class="d-flex justify-content-between align-items-end mt-2">
+                                    <span class="text-muted fw-medium lh-sm" style="font-size: 11px; max-width: 50%;">Saldo Keseluruhan<br><span style="font-size: 10px;">(Semua Rekening & Laci)</span></span>
+                                    <span class="fw-bolder" style="color: var(--bri-blue); font-size: 16px;">Rp <?= number_format($shift['saldo_berjalan'], 0, ',', '.'); ?></span>
+                                </div>
+                            </div>
+                            <?php endforeach; ?>
+                        </div>
+                    </div>
+                </div>
+                <?php endforeach; ?>
+            <?php else: ?>
+                <div class="col-12">
+                    <div class="modern-card text-center py-5">
+                        <i class="bi bi-info-circle text-muted" style="font-size: 40px;"></i>
+                        <h6 class="text-muted fw-bold mt-3">Belum ada cabang atau shift yang buka hari ini.</h6>
+                    </div>
+                </div>
+            <?php endif; ?>
         </div>
 
         <div id="blok-analisis" class="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-3 gap-3" style="scroll-margin-top: 80px;">
@@ -230,53 +321,9 @@ if ($q_pie) {
         </div>
 
         <div class="row g-4 mb-4">
-            <div class="col-lg-5">
+            <div class="col-12">
                 <div class="modern-card h-100">
-                    <h6 class="fw-bold text-dark mb-4 border-bottom pb-3" style="color: var(--bri-black) !important;">Status Cabang Hari Ini</h6>
-                    <div class="table-responsive table-wrapper">
-                        <table class="table table-borderless align-middle mb-0" style="font-size: 13px;">
-                            <thead>
-                                <tr>
-                                    <th>Cabang & Shift</th>
-                                    <th>Modal Laci</th>
-                                    <th>Status</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <?php
-                                $q_status_cabang = $conn->query("
-                                    SELECT c.nama_cabang, s.shift_ke, s.modal_awal, s.status 
-                                    FROM shifts s 
-                                    JOIN users u ON s.user_id = u.id 
-                                    JOIN cabang c ON u.cabang_id = c.id 
-                                    WHERE s.tanggal = '$tanggal_hari_ini' 
-                                    ORDER BY s.id DESC
-                                ");
-                                
-                                if ($q_status_cabang->num_rows > 0):
-                                    while ($row_cabang = $q_status_cabang->fetch_assoc()):
-                                        $badge_class = ($row_cabang['status'] == 'aktif') ? 'bg-success text-white' : 'bg-secondary text-white';
-                                ?>
-                                    <tr>
-                                        <td>
-                                            <strong style="color: var(--bri-blue);"><?= $row_cabang['nama_cabang']; ?></strong><br>
-                                            <small class="text-muted fw-semibold">Shift <?= $row_cabang['shift_ke']; ?></small>
-                                        </td>
-                                        <td class="fw-bold" style="color: var(--bri-black);">Rp <?= number_format($row_cabang['modal_awal'], 0, ',', '.'); ?></td>
-                                        <td><span class="badge rounded-pill px-3 py-2 <?= $badge_class; ?>"><?= ucfirst($row_cabang['status']); ?></span></td>
-                                    </tr>
-                                <?php endwhile; else: ?>
-                                    <tr><td colspan="3" class="text-center text-muted py-5 fw-medium">Belum ada cabang yang buka hari ini.</td></tr>
-                                <?php endif; ?>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-
-            <div class="col-lg-7">
-                <div class="modern-card h-100">
-                    <h6 class="fw-bold text-dark mb-4 border-bottom pb-3" style="color: var(--bri-black) !important;">Transaksi Live (50 Terakhir)</h6>
+                    <h6 class="fw-bold text-dark mb-4 border-bottom pb-3" style="color: var(--bri-black) !important;">Transaksi Live Keseluruhan (50 Terakhir)</h6>
                     <div class="table-responsive table-wrapper">
                         <table class="table table-borderless align-middle mb-0" style="font-size: 13px;">
                             <thead>
@@ -294,14 +341,14 @@ if ($q_pie) {
                                     ORDER BY t.id DESC LIMIT 50
                                 ");
                                 
-                                if ($q_trans_global->num_rows > 0):
+                                if ($q_trans_global && $q_trans_global->num_rows > 0):
                                     while ($row_trans = $q_trans_global->fetch_assoc()):
                                 ?>
                                     <tr>
                                         <td>
                                             <strong style="color: var(--bri-black);"><?= $row_trans['nama_cabang']; ?></strong><br>
                                             <span class="badge mt-1" style="background-color: var(--bri-light-blue); color: var(--bri-blue); font-weight: 600;"><?= $row_trans['jenis_transaksi']; ?></span>
-                                            <small class="text-muted ms-1"><?= date('d/m', strtotime($row_trans['tanggal'])); ?></small>
+                                            <small class="text-muted ms-1"><?= date('d/m H:i', strtotime($row_trans['tanggal'])); ?></small>
                                         </td>
                                         <td class="fw-semibold text-muted">
                                             <?= ($row_trans['jenis_transaksi'] == 'Tukar Uang') ? '-' : 'Rp ' . number_format($row_trans['nominal'], 0, ',', '.'); ?>
