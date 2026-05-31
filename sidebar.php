@@ -29,7 +29,9 @@ $current_page = basename($_SERVER['PHP_SELF']);
             position: fixed;
             top: 0;
             left: 0;
+            /* Menggunakan 100dvh agar presisi di semua perangkat */
             height: 100vh;
+            height: 100dvh; 
             z-index: 1040;
         }
     }
@@ -41,7 +43,7 @@ $current_page = basename($_SERVER['PHP_SELF']);
         box-shadow: 0 4px 12px rgba(0,0,0,0.05);
         position: fixed;
         top: 0; left: 0; width: 100%;
-        z-index: 1050 !important; /* Ditingkatkan agar selalu di depan */
+        z-index: 1050 !important;
     }
 
     /* Style Menu Navigasi */
@@ -114,21 +116,22 @@ $current_page = basename($_SERVER['PHP_SELF']);
     </button>
 </div>
 
-<div class="offcanvas-md offcanvas-start sidebar-modern vh-100" tabindex="-1" id="sidebarMenu" aria-labelledby="sidebarMenuLabel" style="z-index: 1055;">
+<div class="offcanvas-md offcanvas-start sidebar-modern d-flex flex-column" tabindex="-1" id="sidebarMenu" aria-labelledby="sidebarMenuLabel" style="z-index: 1055; height: 100vh; height: 100dvh;">
     
-    <div class="offcanvas-header border-bottom d-md-none mt-1" style="border-color: var(--bri-border) !important;">
+    <div class="offcanvas-header border-bottom d-md-none mt-1" style="border-color: var(--bri-border) !important; flex-shrink: 0;">
         <div class="d-flex flex-column w-100">
-            <div class="d-flex justify-content-between align-items-start">
+            <div class="d-flex justify-content-between align-items-center">
                 <span class="fs-4 fw-extrabold" style="letter-spacing: -0.5px;" id="sidebarMenuLabel">
                     <span style="color: var(--bri-blue);">BRILink</span><span style="color: var(--bri-black);">App</span>
                 </span>
                 <button type="button" class="btn-close shadow-none" data-bs-dismiss="offcanvas" data-bs-target="#sidebarMenu" aria-label="Close"></button>
             </div>
-            <img src="assets/img/logo-katanyangpng" alt="Logo BRILink" class="mt-2 img-fluid" style="max-height: 40px; width: fit-content; object-fit: contain;">
+            <img src="assets/img/logo-katanyang.png" alt="Logo BRILink" class="mt-2 img-fluid" style="max-height: 40px; width: fit-content; object-fit: contain;">
         </div>
     </div>
     
-    <div class="d-flex flex-column flex-grow-1 p-3 overflow-auto">
+    <div class="p-3 overflow-y-auto flex-grow-1">
+        
         <a href="#" class="d-none d-md-flex flex-column align-items-center justify-content-center mb-4 mt-2 text-decoration-none">
             <span class="fs-3 fw-extrabold text-center w-100" style="letter-spacing: -1px;">
                 <span style="color: var(--bri-blue);">BRILink</span><span style="color: var(--bri-black);">App</span>
@@ -141,6 +144,10 @@ $current_page = basename($_SERVER['PHP_SELF']);
                 <li class="nav-item"><a href="admin_dashboard.php" class="nav-link-modern text-decoration-none <?= $current_page == 'admin_dashboard.php' ? 'active' : ''; ?>"><i class="bi bi-grid-fill"></i> Dashboard Pusat</a></li>
                 <li class="nav-item"><a href="kelola_cabang.php" class="nav-link-modern text-decoration-none <?= $current_page == 'kelola_cabang.php' ? 'active' : ''; ?>"><i class="bi bi-shop"></i> Kelola Cabang</a></li>
                 <li class="nav-item"><a href="kelola_user.php" class="nav-link-modern text-decoration-none <?= $current_page == 'kelola_user.php' ? 'active' : ''; ?>"><i class="bi bi-people-fill"></i> Kelola Kasir</a></li>
+                
+                <li class="nav-item"><a href="kelola_rekening.php" class="nav-link-modern text-decoration-none <?= $current_page == 'kelola_rekening.php' ? 'active' : ''; ?>"><i class="bi bi-bank"></i> Kelola Rekening</a></li>
+                <li class="nav-item"><a href="kelola_layanan.php" class="nav-link-modern text-decoration-none <?= $current_page == 'kelola_layanan.php' ? 'active' : ''; ?>"><i class="bi bi-menu-button-wide"></i> Kelola Layanan</a></li>
+                
                 <li class="nav-item"><a href="monitoring_receh.php" class="nav-link-modern text-decoration-none <?= $current_page == 'monitoring_receh.php' ? 'active' : ''; ?>"><i class="bi bi-bar-chart"></i> Monitoring Receh</a></li>
                 <li class="nav-item"><a href="laporan_global.php" class="nav-link-modern text-decoration-none <?= $current_page == 'laporan_global.php' ? 'active' : ''; ?>"><i class="bi bi-file-earmark-bar-graph-fill"></i> Laporan Global</a></li>
             <?php else: ?>
@@ -152,28 +159,27 @@ $current_page = basename($_SERVER['PHP_SELF']);
                 <li class="nav-item"><a href="riwayat.php" class="nav-link-modern text-decoration-none <?= $current_page == 'riwayat.php' ? 'active' : ''; ?>"><i class="bi bi-clock-history"></i> Riwayat Trx</a></li>
             <?php endif; ?>
         </ul>
-        
-        <div class="mt-4 pt-3 border-top" style="border-color: var(--bri-border) !important;">
-            <div class="d-flex align-items-center mb-3 px-2">
-                <?php if (isset($_SESSION['role']) && $_SESSION['role'] == 'admin'): ?>
-                    <div class="me-3 bg-light rounded-circle d-flex align-items-center justify-content-center" style="width: 45px; height: 45px; color: var(--bri-blue);"><i class="bi bi-shield-lock-fill fs-4"></i></div>
-                    <div style="line-height: 1.2;">
-                        <strong class="d-block mb-1" style="font-size: 14px; color: var(--bri-black);"><?= isset($_SESSION['username']) ? ucfirst($_SESSION['username']) : 'Admin'; ?></strong>
-                        <div class="d-flex align-items-center gap-1"><span class="status-dot"></span> <small class="fw-bold" style="color: var(--bri-green); font-size: 11px;">Admin Aktif</small></div>
-                    </div>
-                <?php else: ?>
-                    <div class="me-3 bg-light rounded-circle d-flex align-items-center justify-content-center" style="width: 45px; height: 45px; color: var(--bri-blue);"><i class="bi bi-person-badge-fill fs-4"></i></div>
-                    <div style="line-height: 1.2;">
-                        <strong class="d-block mb-1" style="font-size: 14px; color: var(--bri-black);"><?= isset($_SESSION['nama_cabang']) ? $_SESSION['nama_cabang'] : 'Nama Cabang'; ?></strong>
-                        <div class="d-flex align-items-center gap-1"><span class="status-dot"></span> <small class="fw-bold" style="color: var(--bri-green); font-size: 11px;">Shift <?= isset($_SESSION['shift_ke']) ? $_SESSION['shift_ke'] : '-'; ?> (Online)</small>
-                    </div>
-                    </div>
-                <?php endif; ?>
-            </div>
-            
-            <a href="logout.php" class="btn-logout w-100 text-decoration-none">
-                <i class="bi bi-power fs-5"></i> Keluar
-            </a>
+    </div>
+    
+    <div class="p-3 border-top mt-auto" style="border-color: var(--bri-border) !important; flex-shrink: 0; background-color: var(--bri-white);">
+        <div class="d-flex align-items-center mb-3 px-2">
+            <?php if (isset($_SESSION['role']) && $_SESSION['role'] == 'admin'): ?>
+                <div class="me-3 bg-light rounded-circle d-flex align-items-center justify-content-center" style="width: 45px; height: 45px; color: var(--bri-blue);"><i class="bi bi-shield-lock-fill fs-4"></i></div>
+                <div style="line-height: 1.2;">
+                    <strong class="d-block mb-1" style="font-size: 14px; color: var(--bri-black);"><?= isset($_SESSION['username']) ? ucfirst($_SESSION['username']) : 'Admin'; ?></strong>
+                    <div class="d-flex align-items-center gap-1"><span class="status-dot"></span> <small class="fw-bold" style="color: var(--bri-green); font-size: 11px;">Admin Aktif</small></div>
+                </div>
+            <?php else: ?>
+                <div class="me-3 bg-light rounded-circle d-flex align-items-center justify-content-center" style="width: 45px; height: 45px; color: var(--bri-blue);"><i class="bi bi-person-badge-fill fs-4"></i></div>
+                <div style="line-height: 1.2;">
+                    <strong class="d-block mb-1" style="font-size: 14px; color: var(--bri-black);"><?= isset($_SESSION['nama_cabang']) ? $_SESSION['nama_cabang'] : 'Nama Cabang'; ?></strong>
+                    <div class="d-flex align-items-center gap-1"><span class="status-dot"></span> <small class="fw-bold" style="color: var(--bri-green); font-size: 11px;">Shift <?= isset($_SESSION['shift_ke']) ? $_SESSION['shift_ke'] : '-'; ?> (Online)</small></div>
+                </div>
+            <?php endif; ?>
         </div>
+        
+        <a href="logout.php" class="btn-logout w-100 text-decoration-none">
+            <i class="bi bi-power fs-5"></i> Keluar
+        </a>
     </div>
 </div>
