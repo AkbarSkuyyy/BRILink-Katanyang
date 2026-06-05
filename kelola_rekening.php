@@ -54,7 +54,6 @@ if (isset($_POST['tambah_rekening'])) {
     $no_rek  = $conn->real_escape_string(trim($_POST['no_rek']));
     $alias   = $conn->real_escape_string(trim($_POST['alias'])); 
 
-    // VALIDASI: Pastikan ALIAS tidak boleh sama
     $cek_alias = $conn->query("SELECT id FROM rekening WHERE alias = '$alias'");
     if($cek_alias && $cek_alias->num_rows > 0) {
         $_SESSION['notif'] = ['type' => 'error', 'msg' => "Gagal! Nama Alias '$alias' sudah digunakan. Harap gunakan nama alias yang unik."];
@@ -87,7 +86,6 @@ if (isset($_POST['edit_rekening'])) {
     $no_rek  = $conn->real_escape_string(trim($_POST['no_rek']));
     $alias   = $conn->real_escape_string(trim($_POST['alias'])); 
 
-    // VALIDASI: Cek duplikasi alias pada ID rekening lain
     $cek_alias = $conn->query("SELECT id FROM rekening WHERE alias = '$alias' AND id != $id_rek");
     if($cek_alias && $cek_alias->num_rows > 0) {
         $_SESSION['notif'] = ['type' => 'error', 'msg' => "Gagal! Nama Alias '$alias' sudah terpakai di rekening lain."];
@@ -137,7 +135,7 @@ if ($q_rekening && $q_rekening->num_rows > 0) {
 }
 
 // ==========================================
-// 7. KALKULASI SALDO LIVE PER REKENING
+// 7. KALKULASI SALDO LIVE PER REKENING (DIKELOMPOKAN PER BOS)
 // ==========================================
 $alias_to_user = [];
 $q_users = $conn->query("SELECT id, assigned_banks FROM users");
@@ -146,16 +144,26 @@ if($q_users) {
         if($u['assigned_banks']) {
             $banks = array_map('trim', explode(',', $u['assigned_banks']));
             foreach($banks as $b) {
-                $alias_to_user[$b] = $u['id']; // Mengetahui User ID mana yg megang rekening ini
+                $alias_to_user[$b] = $u['id']; 
             }
         }
     }
 }
 
 $saldo_rekening = [];
+// Array utama untuk memisahkan perhitungan total
+$summary_data = [
+    'semua' => ['total' => 0, 'banks' => []]
+];
+foreach($daftar_pemilik as $pem) {
+    $summary_data[$pem] = ['total' => 0, 'banks' => []];
+}
+
 foreach($semua_rekening_flat as $rek) {
     $alias = $rek['alias'];
     $kolom = $rek['kolom_db'];
+    $bank_name = strtoupper($rek['bank']);
+    $pemilik = $rek['pemilik'];
     $uid = $alias_to_user[$alias] ?? null;
     
     $modal = 0;
@@ -163,10 +171,8 @@ foreach($semua_rekening_flat as $rek) {
     
     try {
         if ($uid) {
-            // Ambil data shift terakhir milik kasir yang pegang rekening ini
             $q_shift = $conn->query("SELECT id, tanggal, $kolom FROM shifts WHERE user_id = '$uid' ORDER BY id DESC LIMIT 1");
         } else {
-            // Jika rekening sedang tidak dipegang siapa-siapa, ambil riwayat saldo terakhirnya dari shift mana saja
             $q_shift = $conn->query("SELECT id, tanggal, $kolom FROM shifts WHERE $kolom > 0 ORDER BY id DESC LIMIT 1");
         }
         
@@ -176,9 +182,8 @@ foreach($semua_rekening_flat as $rek) {
             $tgl = $shift['tanggal'];
             $modal = (float)$shift[$kolom];
             
-            // Hitung uang masuk dan keluar khusus dari shift tersebut
-            $q_in = $conn->query("SELECT SUM(nominal + admin_fee) as tot FROM transactions WHERE shift_id = '$sid' AND tanggal >= '$tgl' AND jenis_transaksi = 'Tarik Tunai' AND bank_agen = '$alias'")->fetch_assoc()['tot'] ?? 0;
-            $q_out = $conn->query("SELECT SUM(nominal) as tot FROM transactions WHERE shift_id = '$sid' AND tanggal >= '$tgl' AND jenis_transaksi NOT IN ('Tarik Tunai', 'Tukar Uang') AND bank_agen = '$alias'")->fetch_assoc()['tot'] ?? 0;
+            $q_in = $conn->query("SELECT SUM(CASE WHEN jenis_transaksi = 'Tarik Tunai' THEN nominal + admin_fee ELSE nominal END) as tot FROM transactions WHERE shift_id = '$sid' AND tanggal >= '$tgl' AND jenis_transaksi IN ('Tarik Tunai', 'Setor Dana Bos') AND bank_agen = '$alias'")->fetch_assoc()['tot'] ?? 0;
+            $q_out = $conn->query("SELECT SUM(nominal) as tot FROM transactions WHERE shift_id = '$sid' AND tanggal >= '$tgl' AND jenis_transaksi NOT IN ('Tarik Tunai', 'Tukar Uang', 'Setor Dana Bos') AND bank_agen = '$alias'")->fetch_assoc()['tot'] ?? 0;
             
             $saldo_live = $modal + $q_in - $q_out;
         }
@@ -191,6 +196,16 @@ foreach($semua_rekening_flat as $rek) {
         'live' => $saldo_live,
         'assigned' => $uid ? true : false
     ];
+
+    // Menambahkan Saldo ke Group 'Semua Rekening'
+    $summary_data['semua']['total'] += $saldo_live;
+    if(!isset($summary_data['semua']['banks'][$bank_name])) $summary_data['semua']['banks'][$bank_name] = 0;
+    $summary_data['semua']['banks'][$bank_name] += $saldo_live;
+
+    // Menambahkan Saldo khusus ke Group Bos Pemilik Rekening
+    $summary_data[$pemilik]['total'] += $saldo_live;
+    if(!isset($summary_data[$pemilik]['banks'][$bank_name])) $summary_data[$pemilik]['banks'][$bank_name] = 0;
+    $summary_data[$pemilik]['banks'][$bank_name] += $saldo_live;
 }
 ?>
 
@@ -244,7 +259,7 @@ foreach($semua_rekening_flat as $rek) {
         .bg-bsi { background-color: #00A651; color: white; }
         .bg-default { background-color: #607D8B; color: white; } 
 
-        .nav-pills { gap: 12px; margin-bottom: 30px; }
+        .nav-pills { gap: 12px; }
         .nav-pills .nav-link { border-radius: 50px; color: #6c757d; font-weight: 600; padding: 10px 24px; background-color: var(--bri-white); border: 1px solid var(--bri-grey); transition: all 0.3s ease; font-size: 14px; }
         .nav-pills .nav-link:hover { background-color: var(--bri-light-blue); color: var(--bri-blue); }
         .nav-pills .nav-link.active { background-color: var(--bri-blue); color: var(--bri-white); border-color: var(--bri-blue); box-shadow: 0 4px 12px rgba(0, 82, 156, 0.3); }
@@ -253,7 +268,6 @@ foreach($semua_rekening_flat as $rek) {
         .modal-header { border-bottom: 1px solid var(--bri-grey); padding: 20px 24px; }
         .modal-body { padding: 24px; }
 
-        /* Custom SweetAlert Font */
         .swal2-popup { font-family: 'Montserrat', sans-serif !important; border-radius: 16px !important; }
 
         @media (max-width: 767.98px) {
@@ -280,22 +294,59 @@ foreach($semua_rekening_flat as $rek) {
             </button>
         </div>
 
-        <ul class="nav nav-pills" id="pills-tab" role="tablist">
-            <li class="nav-item" role="presentation">
-                <button class="nav-link active" id="pills-semua-tab" data-bs-toggle="pill" data-bs-target="#pills-semua" type="button" role="tab"><i class="bi bi-grid-fill me-2"></i>Semua Rekening</button>
-            </li>
-            <?php foreach($daftar_pemilik as $index => $pem): ?>
-            <li class="nav-item" role="presentation">
-                <button class="nav-link" id="pills-<?= md5($pem); ?>-tab" data-bs-toggle="pill" data-bs-target="#pills-<?= md5($pem); ?>" type="button" role="tab">
-                    <i class="bi bi-person-fill me-2"></i><?= htmlspecialchars($pem); ?>
-                </button>
-            </li>
-            <?php endforeach; ?>
-        </ul>
+        <div class="d-flex flex-column flex-xl-row justify-content-between align-items-xl-center mb-4 gap-3 border-bottom pb-3">
+            <ul class="nav nav-pills mb-0" id="pills-tab" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="pills-semua-tab" data-bs-toggle="pill" data-bs-target="#pills-semua" type="button" role="tab"><i class="bi bi-grid-fill me-2"></i>Semua Rekening</button>
+                </li>
+                <?php foreach($daftar_pemilik as $index => $pem): ?>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="pills-<?= md5($pem); ?>-tab" data-bs-toggle="pill" data-bs-target="#pills-<?= md5($pem); ?>" type="button" role="tab">
+                        <i class="bi bi-person-fill me-2"></i><?= htmlspecialchars($pem); ?>
+                    </button>
+                </li>
+                <?php endforeach; ?>
+            </ul>
+            
+            <div class="d-flex align-items-center">
+                <i class="bi bi-funnel-fill text-muted me-2"></i>
+                <select id="filterBank" class="form-select form-select-sm rounded-pill fw-bold border-secondary shadow-sm" style="width: 170px;">
+                    <option value="semua">Semua Bank</option>
+                    <?php foreach(array_keys($summary_data['semua']['banks']) as $b_name): ?>
+                        <option value="<?= strtolower($b_name) ?>"><?= $b_name ?></option>
+                    <?php endforeach; ?>
+                </select>
+            </div>
+        </div>
 
         <div class="tab-content" id="pills-tabContent">
             
             <div class="tab-pane fade show active" id="pills-semua" role="tabpanel">
+                
+                <h6 class="fw-bold mb-3 text-secondary">Ringkasan Total Saldo (Global)</h6>
+                <div class="row g-3 mb-4">
+                    <div class="col-6 col-md-4 col-lg-3">
+                        <div class="p-3 rounded-4 shadow-sm h-100 d-flex flex-column justify-content-center" style="background: linear-gradient(135deg, #1a1a1a, #434343); color: white;">
+                            <small class="fw-bold d-block mb-1" style="font-size: 11px; opacity: 0.8;">TOTAL KESELURUHAN</small>
+                            <h4 class="fw-bolder mb-0 fs-5 text-truncate">Rp <?= number_format($summary_data['semua']['total'], 0, ',', '.') ?></h4>
+                        </div>
+                    </div>
+                    <?php foreach($summary_data['semua']['banks'] as $b_name => $t_saldo): 
+                        $bg_color = 'var(--bri-blue)';
+                        if($b_name == 'BCA') $bg_color = '#0066AE';
+                        elseif($b_name == 'MANDIRI') $bg_color = '#F2A900';
+                        elseif($b_name == 'BNI') $bg_color = '#F15A24';
+                        elseif($b_name == 'BSI') $bg_color = '#00A651';
+                    ?>
+                    <div class="col-6 col-md-4 col-lg-3">
+                        <div class="p-3 rounded-4 shadow-sm h-100 d-flex flex-column justify-content-center" style="background-color: <?= $bg_color ?>; color: white;">
+                            <small class="fw-bold d-block mb-1" style="font-size: 11px; opacity: 0.8;">TOTAL <?= $b_name ?></small>
+                            <h4 class="fw-bolder mb-0 fs-5 text-truncate">Rp <?= number_format($t_saldo, 0, ',', '.') ?></h4>
+                        </div>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+
                 <div class="row g-4">
                     <?php if(!empty($data_rekening)): foreach($data_rekening as $pemilik => $rekenings): foreach($rekenings as $rek): 
                         $bank_lower = strtolower($rek['bank']);
@@ -309,7 +360,7 @@ foreach($semua_rekening_flat as $rek) {
                         $saldo_info = $saldo_rekening[$rek['alias']];
                         $status_badge = $saldo_info['assigned'] ? '<span class="badge bg-success bg-opacity-10 text-success border border-success" style="font-size: 10px;"><i class="bi bi-broadcast me-1"></i>Aktif Digunakan</span>' : '<span class="badge bg-secondary bg-opacity-10 text-secondary border border-secondary" style="font-size: 10px;">Nganggur / Disimpan</span>';
                     ?>
-                    <div class="col-md-6 col-lg-4 col-xl-3">
+                    <div class="col-md-6 col-lg-4 col-xl-3 rek-card-item" data-bank="<?= $bank_lower; ?>">
                         <div class="modern-card h-100">
                             <div class="d-flex justify-content-between align-items-start mb-3">
                                 <div>
@@ -327,7 +378,6 @@ foreach($semua_rekening_flat as $rek) {
                                 <span class="fw-extrabold fs-5 font-monospace" style="color: var(--bri-blue); letter-spacing: 1px;"><?= htmlspecialchars($rek['nomor_rekening']); ?></span>
                             </div>
 
-                            <!-- KOTAK TAMPILAN SALDO -->
                             <div class="p-3 mt-2 rounded-4" style="background-color: #f8f9fa; border: 1px solid #dee2e6;">
                                 <div class="d-flex justify-content-between align-items-center mb-1">
                                     <small class="text-muted fw-bold" style="font-size: 10px;">SALDO SAAT INI (LIVE)</small>
@@ -363,6 +413,31 @@ foreach($semua_rekening_flat as $rek) {
 
             <?php foreach($data_rekening as $pemilik => $rekenings): ?>
             <div class="tab-pane fade" id="pills-<?= md5($pemilik); ?>" role="tabpanel">
+                
+                <h6 class="fw-bold mb-3 text-secondary">Ringkasan Total Saldo (<?= htmlspecialchars($pemilik) ?>)</h6>
+                <div class="row g-3 mb-4">
+                    <div class="col-6 col-md-4 col-lg-3">
+                        <div class="p-3 rounded-4 shadow-sm h-100 d-flex flex-column justify-content-center" style="background: linear-gradient(135deg, #1a1a1a, #434343); color: white;">
+                            <small class="fw-bold d-block mb-1" style="font-size: 11px; opacity: 0.8;">TOTAL KESELURUHAN</small>
+                            <h4 class="fw-bolder mb-0 fs-5 text-truncate">Rp <?= number_format($summary_data[$pemilik]['total'], 0, ',', '.') ?></h4>
+                        </div>
+                    </div>
+                    <?php foreach($summary_data[$pemilik]['banks'] as $b_name => $t_saldo): 
+                        $bg_color = 'var(--bri-blue)';
+                        if($b_name == 'BCA') $bg_color = '#0066AE';
+                        elseif($b_name == 'MANDIRI') $bg_color = '#F2A900';
+                        elseif($b_name == 'BNI') $bg_color = '#F15A24';
+                        elseif($b_name == 'BSI') $bg_color = '#00A651';
+                    ?>
+                    <div class="col-6 col-md-4 col-lg-3">
+                        <div class="p-3 rounded-4 shadow-sm h-100 d-flex flex-column justify-content-center" style="background-color: <?= $bg_color ?>; color: white;">
+                            <small class="fw-bold d-block mb-1" style="font-size: 11px; opacity: 0.8;">TOTAL <?= $b_name ?></small>
+                            <h4 class="fw-bolder mb-0 fs-5 text-truncate">Rp <?= number_format($t_saldo, 0, ',', '.') ?></h4>
+                        </div>
+                    </div>
+                    <?php endforeach; ?>
+                </div>
+
                 <div class="row g-4">
                     <?php foreach($rekenings as $rek): 
                         $bank_lower = strtolower($rek['bank']);
@@ -376,7 +451,7 @@ foreach($semua_rekening_flat as $rek) {
                         $saldo_info = $saldo_rekening[$rek['alias']];
                         $status_badge = $saldo_info['assigned'] ? '<span class="badge bg-success bg-opacity-10 text-success border border-success" style="font-size: 10px;"><i class="bi bi-broadcast me-1"></i>Aktif Digunakan</span>' : '<span class="badge bg-secondary bg-opacity-10 text-secondary border border-secondary" style="font-size: 10px;">Nganggur / Disimpan</span>';
                     ?>
-                    <div class="col-md-6 col-lg-4 col-xl-3">
+                    <div class="col-md-6 col-lg-4 col-xl-3 rek-card-item" data-bank="<?= $bank_lower; ?>">
                         <div class="modern-card h-100">
                             <div class="d-flex justify-content-between align-items-start mb-3">
                                 <div>
@@ -423,7 +498,6 @@ foreach($semua_rekening_flat as $rek) {
         </div>
     </div>
 
-    <!-- MODAL TAMBAH REKENING -->
     <div class="modal fade" id="modalTambah" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
@@ -478,7 +552,6 @@ foreach($semua_rekening_flat as $rek) {
         </div>
     </div>
 
-    <!-- MODAL EDIT REKENING (LOOPING) -->
     <?php foreach($semua_rekening_flat as $rek): ?>
     <div class="modal fade" id="modalEdit<?= $rek['id']; ?>" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
@@ -542,7 +615,21 @@ foreach($semua_rekening_flat as $rek) {
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11.7.3/dist/sweetalert2.all.min.js"></script>
     
     <script>
-        // 1. Toast Notification untuk Notifikasi Berhasil/Gagal
+        // SCRIPT FILTER BANK
+        document.getElementById('filterBank').addEventListener('change', function() {
+            let selectedBank = this.value;
+            let allCards = document.querySelectorAll('.rek-card-item');
+            
+            allCards.forEach(function(card) {
+                if (selectedBank === 'semua' || card.getAttribute('data-bank') === selectedBank) {
+                    card.style.display = 'block';
+                } else {
+                    card.style.display = 'none';
+                }
+            });
+        });
+
+        // Toast Notification untuk Notifikasi Berhasil/Gagal
         <?php if(isset($_SESSION['notif'])): ?>
             const Toast = Swal.mixin({
                 toast: true,
@@ -562,7 +649,7 @@ foreach($semua_rekening_flat as $rek) {
             });
         <?php unset($_SESSION['notif']); endif; ?>
 
-        // 2. Alert Konfirmasi Hapus Rekening
+        // Alert Konfirmasi Hapus Rekening
         document.querySelectorAll('.btn-hapus').forEach(button => {
             button.addEventListener('click', function(e) {
                 e.preventDefault(); 
