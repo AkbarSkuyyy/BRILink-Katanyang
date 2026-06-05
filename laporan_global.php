@@ -1,5 +1,6 @@
 <?php
 require 'config.php';
+if (session_status() == PHP_SESSION_NONE) { session_start(); }
 if (!isset($_SESSION['role']) || $_SESSION['role'] != 'admin') { header("Location: index.php"); exit; }
 
 // --- MENGELOLA FILTER PENCARIAN ---
@@ -15,11 +16,12 @@ if ($filter_cabang != 'all') {
     $kondisi_query .= " AND u.cabang_id = '$cabang_id_safe'";
 }
 
-// --- MENGHITUNG RINGKASAN METRIK ---
+// --- MENGHITUNG RINGKASAN METRIK (DIPERBARUI DENGAN LOGIKA RUGI) ---
 $q_ringkasan = $conn->query("
     SELECT 
-        SUM(t.nominal) as tot_nominal, 
+        SUM(CASE WHEN t.jenis_transaksi NOT IN ('Tukar Uang', 'Pengeluaran / Rugi') THEN t.nominal ELSE 0 END) as tot_nominal, 
         SUM(t.admin_fee) as tot_admin, 
+        SUM(CASE WHEN t.jenis_transaksi = 'Pengeluaran / Rugi' THEN t.nominal ELSE 0 END) as tot_rugi,
         COUNT(t.id) as tot_trx 
     FROM transactions t 
     JOIN users u ON t.user_id = u.id 
@@ -29,7 +31,11 @@ $d_ringkasan = $q_ringkasan->fetch_assoc();
 
 $total_perputaran = !empty($d_ringkasan['tot_nominal']) ? $d_ringkasan['tot_nominal'] : 0;
 $total_laba       = !empty($d_ringkasan['tot_admin']) ? $d_ringkasan['tot_admin'] : 0;
+$total_rugi       = !empty($d_ringkasan['tot_rugi']) ? $d_ringkasan['tot_rugi'] : 0;
 $total_transaksi  = !empty($d_ringkasan['tot_trx']) ? $d_ringkasan['tot_trx'] : 0;
+
+// Laba Bersih Aktual (Laba Admin dikurangi Pengeluaran/Rugi)
+$laba_aktual = $total_laba - $total_rugi;
 
 // Nama cabang untuk header cetak
 $nama_cabang_cetak = "SEMUA CABANG";
@@ -83,6 +89,7 @@ if ($filter_cabang != 'all') {
         .bg-trx { background: linear-gradient(135deg, #0dcaf0 0%, #087990 100%); color: var(--bri-white); }
         .bg-putar { background: linear-gradient(135deg, #003366 0%, var(--bri-blue) 100%); color: var(--bri-white); }
         .bg-laba { background: linear-gradient(135deg, #b3d4ff 0%, var(--bri-light-blue) 100%); color: var(--bri-blue); }
+        .bg-rugi { background: linear-gradient(135deg, #dc3545 0%, #a71d2a 100%); color: var(--bri-white); }
 
         /* Forms & Buttons */
         .form-control, .form-select { border-radius: 14px; border: 1px solid var(--bri-grey); background-color: var(--bg-body); padding: 12px 15px; color: var(--bri-black); font-weight: 500; }
@@ -99,8 +106,8 @@ if ($filter_cabang != 'all') {
         .table-wrapper::-webkit-scrollbar { width: 6px; }
         .table-wrapper::-webkit-scrollbar-track { background: transparent; }
         .table-wrapper::-webkit-scrollbar-thumb { background: var(--bri-grey); border-radius: 10px; }
-        .table-wrapper thead th { position: sticky; top: 0; background-color: var(--bri-white); z-index: 1; border-bottom: 2px solid var(--bri-grey); color: var(--bri-black); font-weight: 700; padding: 15px; }
-        .table-wrapper tbody td { padding: 15px; border-bottom: 1px solid var(--bri-grey); vertical-align: middle; }
+        .table-wrapper thead th { position: sticky; top: 0; background-color: var(--bri-white); z-index: 1; border-bottom: 2px solid var(--bri-grey); color: var(--bri-black); font-weight: 700; padding: 15px; font-size: 13px; text-transform: uppercase; }
+        .table-wrapper tbody td { padding: 15px; border-bottom: 1px solid var(--bri-grey); vertical-align: middle; font-size: 14px; }
 
         @media (max-width: 767.98px) {
             .main-content { margin-left: 0 !important; padding: 20px 15px !important; padding-top: 85px !important; }
@@ -115,6 +122,7 @@ if ($filter_cabang != 'all') {
             .modern-card, .metric-card { box-shadow: none !important; border: 1px solid #000 !important; padding: 15px !important; margin-bottom: 15px; background: white !important; color: black !important; }
             .metric-card p, .metric-card h3 { color: black !important; }
             .print-only { display: block; text-align: center; margin-bottom: 20px; }
+            .table-wrapper { max-height: none !important; overflow: visible !important; }
             table { font-size: 11px !important; width: 100% !important; border-collapse: collapse; }
             table th, table td { border: 1px solid #000 !important; padding: 6px !important; }
         }
@@ -129,7 +137,7 @@ if ($filter_cabang != 'all') {
         <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-4 gap-3 no-print">
             <div>
                 <h3 class="fw-extrabold mb-1" style="color: var(--bri-black); letter-spacing: -0.5px;">Laporan Global</h3>
-                <p class="fw-medium mb-0" style="color: #6c757d;">Tarik data rekapitulasi cabang dan rentang tanggal</p>
+                <p class="fw-medium mb-0" style="color: #6c757d;">Tarik data rekapitulasi cabang, pengeluaran, dan rentang tanggal</p>
             </div>
             
             <button onclick="window.print()" class="btn btn-dark fw-bold rounded-pill shadow-sm align-self-start" style="padding: 12px 28px;">
@@ -174,24 +182,33 @@ if ($filter_cabang != 'all') {
         </div>
 
         <div class="row g-3 mb-4">
-            <div class="col-md-4">
+            <div class="col-md-6 col-xl-3">
                 <div class="metric-card bg-trx">
                     <p class="mb-1 fw-semibold small opacity-75 text-uppercase tracking-wide">Total Transaksi</p>
                     <h3 class="fw-bolder mb-0"><?= number_format($total_transaksi, 0, ',', '.'); ?> <span class="fs-6 opacity-75 fw-normal">Trx</span></h3>
                     <i class="bi bi-receipt"></i>
                 </div>
             </div>
-            <div class="col-md-4">
+            <div class="col-md-6 col-xl-3">
                 <div class="metric-card bg-putar">
-                    <p class="mb-1 fw-semibold small opacity-75 text-uppercase tracking-wide">Total Perputaran Uang</p>
+                    <p class="mb-1 fw-semibold small opacity-75 text-uppercase tracking-wide">Total Perputaran</p>
                     <h3 class="fw-bolder mb-0">Rp <?= number_format($total_perputaran, 0, ',', '.'); ?></h3>
                     <i class="bi bi-arrow-repeat"></i>
                 </div>
             </div>
-            <div class="col-md-4">
+            <div class="col-md-6 col-xl-3">
+                <div class="metric-card bg-rugi">
+                    <p class="mb-1 fw-bold small text-uppercase tracking-wide" style="opacity: 0.8;">Total Pengeluaran / Rugi</p>
+                    <h3 class="fw-bolder mb-0">- Rp <?= number_format($total_rugi, 0, ',', '.'); ?></h3>
+                    <i class="bi bi-graph-down-arrow"></i>
+                </div>
+            </div>
+            <div class="col-md-6 col-xl-3">
                 <div class="metric-card bg-laba">
-                    <p class="mb-1 fw-bold small text-uppercase tracking-wide" style="opacity: 0.7;">Total Laba Bersih (Admin)</p>
-                    <h3 class="fw-bolder mb-0">+ Rp <?= number_format($total_laba, 0, ',', '.'); ?></h3>
+                    <p class="mb-1 fw-bold small text-uppercase tracking-wide" style="opacity: 0.7;">Laba Bersih Aktual</p>
+                    <h3 class="fw-bolder mb-0 <?= $laba_aktual < 0 ? 'text-danger' : ''; ?>">
+                        <?= $laba_aktual >= 0 ? '+' : ''; ?> Rp <?= number_format($laba_aktual, 0, ',', '.'); ?>
+                    </h3>
                     <i class="bi bi-graph-up-arrow" style="color: var(--bri-blue); opacity: 0.1;"></i>
                 </div>
             </div>
@@ -200,16 +217,17 @@ if ($filter_cabang != 'all') {
         <div class="modern-card">
             <h5 class="fw-bold text-dark mb-4 border-bottom pb-3 filter-section" style="color: var(--bri-black) !important;">Rincian Transaksi Filter</h5>
             <div class="table-responsive table-wrapper">
-                <table class="table table-borderless align-middle mb-0" style="font-size: 13px;">
+                <table class="table table-borderless align-middle mb-0">
                     <thead>
                         <tr>
                             <th>No</th>
                             <th>Tanggal</th>
                             <th>Cabang & Shift</th>
                             <th>Layanan</th>
+                            <th>Sumber Dana</th>
                             <th>Keterangan / Tujuan</th>
-                            <th>Nominal</th>
-                            <th>Admin Jasa</th>
+                            <th class="text-end">Nominal</th>
+                            <th class="text-end">Admin Jasa</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -226,26 +244,42 @@ if ($filter_cabang != 'all') {
                         $no = 1;
                         if ($q_trans->num_rows > 0):
                             while ($row = $q_trans->fetch_assoc()):
+                                $is_rugi = ($row['jenis_transaksi'] == 'Pengeluaran / Rugi');
                         ?>
-                            <tr>
+                            <tr class="<?= $is_rugi ? 'bg-danger bg-opacity-10' : ''; ?>">
                                 <td class="text-muted fw-bold"><?= $no++; ?></td>
                                 <td class="fw-medium text-muted"><?= date('d/m/y', strtotime($row['tanggal'])); ?></td>
                                 <td>
                                     <strong style="color: var(--bri-blue);"><?= $row['nama_cabang']; ?></strong><br>
                                     <small class="text-muted fw-semibold">Shift <?= $row['shift_ke']; ?></small>
                                 </td>
-                                <td><span class="badge rounded-pill px-3 py-2" style="background-color: var(--bri-light-blue); color: var(--bri-blue); font-weight: 600;"><?= $row['jenis_transaksi']; ?></span></td>
+                                <td>
+                                    <?php if($is_rugi): ?>
+                                        <span class="badge bg-danger rounded-pill px-3 py-2 fw-bold">Pengeluaran / Rugi</span>
+                                    <?php else: ?>
+                                        <span class="badge rounded-pill px-3 py-2" style="background-color: var(--bri-light-blue); color: var(--bri-blue); font-weight: 600;"><?= $row['jenis_transaksi']; ?></span>
+                                    <?php endif; ?>
+                                </td>
+                                <td>
+                                    <?php if($row['bank_agen'] == 'CASH'): ?>
+                                        <span class="fw-bold text-success"><i class="bi bi-cash me-1"></i>CASH</span>
+                                    <?php elseif($row['bank_agen'] != '-'): ?>
+                                        <span class="fw-bold text-primary"><i class="bi bi-bank me-1"></i><?= $row['bank_agen']; ?></span>
+                                    <?php else: ?>
+                                        <span class="text-muted">-</span>
+                                    <?php endif; ?>
+                                </td>
                                 <td><?= empty($row['keterangan']) ? '-' : $row['keterangan']; ?></td>
-                                <td class="fw-bold text-muted">
+                                <td class="fw-bold <?= $is_rugi ? 'text-danger' : 'text-dark'; ?> text-end">
                                     <?= ($row['jenis_transaksi'] == 'Tukar Uang') ? '-' : 'Rp ' . number_format($row['nominal'], 0, ',', '.'); ?>
                                 </td>
-                                <td class="text-success fw-bolder">+ Rp <?= number_format($row['admin_fee'], 0, ',', '.'); ?></td>
+                                <td class="text-success fw-bolder text-end">+ Rp <?= number_format($row['admin_fee'], 0, ',', '.'); ?></td>
                             </tr>
                         <?php 
                             endwhile; 
                         else: 
                         ?>
-                            <tr><td colspan="7" class="text-center py-5 text-muted fw-medium border-0">Tidak ada data transaksi yang ditemukan pada rentang tanggal/cabang ini.</td></tr>
+                            <tr><td colspan="8" class="text-center py-5 text-muted fw-medium border-0">Tidak ada data transaksi yang ditemukan pada rentang tanggal/cabang ini.</td></tr>
                         <?php endif; ?>
                     </tbody>
                 </table>
@@ -253,5 +287,7 @@ if ($filter_cabang != 'all') {
         </div>
 
     </div>
+    
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>

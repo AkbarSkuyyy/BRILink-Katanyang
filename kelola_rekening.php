@@ -54,6 +54,13 @@ if (isset($_POST['tambah_rekening'])) {
     $no_rek  = $conn->real_escape_string(trim($_POST['no_rek']));
     $alias   = $conn->real_escape_string(trim($_POST['alias'])); 
 
+    // VALIDASI: Pastikan ALIAS tidak boleh sama
+    $cek_alias = $conn->query("SELECT id FROM rekening WHERE alias = '$alias'");
+    if($cek_alias && $cek_alias->num_rows > 0) {
+        $_SESSION['notif'] = ['type' => 'error', 'msg' => "Gagal! Nama Alias '$alias' sudah digunakan. Harap gunakan nama alias yang unik."];
+        header("Location: kelola_rekening.php"); exit;
+    }
+
     $p_clean = preg_replace('/[^a-zA-Z0-9]/', '', $pemilik);
     $a_clean = preg_replace('/[^a-zA-Z0-9]/', '', $alias);
     $kolom_db = 'modal_' . strtolower($p_clean . $a_clean);
@@ -79,6 +86,13 @@ if (isset($_POST['edit_rekening'])) {
     $bank    = $conn->real_escape_string(trim($_POST['bank']));
     $no_rek  = $conn->real_escape_string(trim($_POST['no_rek']));
     $alias   = $conn->real_escape_string(trim($_POST['alias'])); 
+
+    // VALIDASI: Cek duplikasi alias pada ID rekening lain
+    $cek_alias = $conn->query("SELECT id FROM rekening WHERE alias = '$alias' AND id != $id_rek");
+    if($cek_alias && $cek_alias->num_rows > 0) {
+        $_SESSION['notif'] = ['type' => 'error', 'msg' => "Gagal! Nama Alias '$alias' sudah terpakai di rekening lain."];
+        header("Location: kelola_rekening.php"); exit;
+    }
 
     $update = $conn->query("UPDATE rekening SET pemilik = '$pemilik', bank = '$bank', nomor_rekening = '$no_rek', alias = '$alias' WHERE id = $id_rek");
     
@@ -120,6 +134,63 @@ if ($q_rekening && $q_rekening->num_rows > 0) {
             $daftar_pemilik[] = $pemilik;
         }
     }
+}
+
+// ==========================================
+// 7. KALKULASI SALDO LIVE PER REKENING
+// ==========================================
+$alias_to_user = [];
+$q_users = $conn->query("SELECT id, assigned_banks FROM users");
+if($q_users) {
+    while($u = $q_users->fetch_assoc()) {
+        if($u['assigned_banks']) {
+            $banks = array_map('trim', explode(',', $u['assigned_banks']));
+            foreach($banks as $b) {
+                $alias_to_user[$b] = $u['id']; // Mengetahui User ID mana yg megang rekening ini
+            }
+        }
+    }
+}
+
+$saldo_rekening = [];
+foreach($semua_rekening_flat as $rek) {
+    $alias = $rek['alias'];
+    $kolom = $rek['kolom_db'];
+    $uid = $alias_to_user[$alias] ?? null;
+    
+    $modal = 0;
+    $saldo_live = 0;
+    
+    try {
+        if ($uid) {
+            // Ambil data shift terakhir milik kasir yang pegang rekening ini
+            $q_shift = $conn->query("SELECT id, tanggal, $kolom FROM shifts WHERE user_id = '$uid' ORDER BY id DESC LIMIT 1");
+        } else {
+            // Jika rekening sedang tidak dipegang siapa-siapa, ambil riwayat saldo terakhirnya dari shift mana saja
+            $q_shift = $conn->query("SELECT id, tanggal, $kolom FROM shifts WHERE $kolom > 0 ORDER BY id DESC LIMIT 1");
+        }
+        
+        if ($q_shift && $q_shift->num_rows > 0) {
+            $shift = $q_shift->fetch_assoc();
+            $sid = $shift['id'];
+            $tgl = $shift['tanggal'];
+            $modal = (float)$shift[$kolom];
+            
+            // Hitung uang masuk dan keluar khusus dari shift tersebut
+            $q_in = $conn->query("SELECT SUM(nominal + admin_fee) as tot FROM transactions WHERE shift_id = '$sid' AND tanggal >= '$tgl' AND jenis_transaksi = 'Tarik Tunai' AND bank_agen = '$alias'")->fetch_assoc()['tot'] ?? 0;
+            $q_out = $conn->query("SELECT SUM(nominal) as tot FROM transactions WHERE shift_id = '$sid' AND tanggal >= '$tgl' AND jenis_transaksi NOT IN ('Tarik Tunai', 'Tukar Uang') AND bank_agen = '$alias'")->fetch_assoc()['tot'] ?? 0;
+            
+            $saldo_live = $modal + $q_in - $q_out;
+        }
+    } catch (Exception $e) {
+        $modal = 0; $saldo_live = 0;
+    }
+    
+    $saldo_rekening[$alias] = [
+        'modal' => $modal,
+        'live' => $saldo_live,
+        'assigned' => $uid ? true : false
+    ];
 }
 ?>
 
@@ -201,7 +272,7 @@ if ($q_rekening && $q_rekening->num_rows > 0) {
         <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-4 gap-3">
             <div>
                 <h3 class="fw-extrabold mb-1" style="color: var(--bri-black); letter-spacing: -0.5px;">Manajemen Rekening Master</h3>
-                <p class="fw-medium mb-0" style="color: #6c757d;">Kelola dan filter pembagian rekening berdasarkan pemiliknya</p>
+                <p class="fw-medium mb-0" style="color: #6c757d;">Kelola dan pantau live saldo seluruh rekening cabang</p>
             </div>
             
             <button class="btn btn-modern align-self-start" data-bs-toggle="modal" data-bs-target="#modalTambah">
@@ -234,6 +305,9 @@ if ($q_rekening && $q_rekening->num_rows > 0) {
                         elseif($bank_lower == 'mandiri') $badge_class = 'bg-mandiri';
                         elseif($bank_lower == 'bni') $badge_class = 'bg-bni';
                         elseif($bank_lower == 'bsi') $badge_class = 'bg-bsi';
+
+                        $saldo_info = $saldo_rekening[$rek['alias']];
+                        $status_badge = $saldo_info['assigned'] ? '<span class="badge bg-success bg-opacity-10 text-success border border-success" style="font-size: 10px;"><i class="bi bi-broadcast me-1"></i>Aktif Digunakan</span>' : '<span class="badge bg-secondary bg-opacity-10 text-secondary border border-secondary" style="font-size: 10px;">Nganggur / Disimpan</span>';
                     ?>
                     <div class="col-md-6 col-lg-4 col-xl-3">
                         <div class="modern-card h-100">
@@ -252,8 +326,18 @@ if ($q_rekening && $q_rekening->num_rows > 0) {
                                 <small class="text-muted fw-bold d-block mb-1" style="font-size: 11px;">NO REKENING</small>
                                 <span class="fw-extrabold fs-5 font-monospace" style="color: var(--bri-blue); letter-spacing: 1px;"><?= htmlspecialchars($rek['nomor_rekening']); ?></span>
                             </div>
+
+                            <!-- KOTAK TAMPILAN SALDO -->
+                            <div class="p-3 mt-2 rounded-4" style="background-color: #f8f9fa; border: 1px solid #dee2e6;">
+                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                    <small class="text-muted fw-bold" style="font-size: 10px;">SALDO SAAT INI (LIVE)</small>
+                                    <?= $status_badge; ?>
+                                </div>
+                                <h4 class="fw-bolder mb-1" style="color: var(--bri-black);">Rp <?= number_format($saldo_info['live'], 0, ',', '.'); ?></h4>
+                                <small class="text-muted fw-semibold" style="font-size: 10px;">Input modal terakhir: Rp <?= number_format($saldo_info['modal'], 0, ',', '.'); ?></small>
+                            </div>
                             
-                            <div class="mt-4 d-flex justify-content-between align-items-end">
+                            <div class="mt-3 d-flex justify-content-between align-items-end">
                                 <div>
                                     <small class="text-muted fw-bold d-block" style="font-size: 10px;">KOLOM DATABASE</small>
                                     <span class="badge bg-light text-dark border px-2 py-1 mt-1"><i class="bi bi-database me-1"></i><?= $rek['kolom_db']; ?></span>
@@ -288,6 +372,9 @@ if ($q_rekening && $q_rekening->num_rows > 0) {
                         elseif($bank_lower == 'mandiri') $badge_class = 'bg-mandiri';
                         elseif($bank_lower == 'bni') $badge_class = 'bg-bni';
                         elseif($bank_lower == 'bsi') $badge_class = 'bg-bsi';
+
+                        $saldo_info = $saldo_rekening[$rek['alias']];
+                        $status_badge = $saldo_info['assigned'] ? '<span class="badge bg-success bg-opacity-10 text-success border border-success" style="font-size: 10px;"><i class="bi bi-broadcast me-1"></i>Aktif Digunakan</span>' : '<span class="badge bg-secondary bg-opacity-10 text-secondary border border-secondary" style="font-size: 10px;">Nganggur / Disimpan</span>';
                     ?>
                     <div class="col-md-6 col-lg-4 col-xl-3">
                         <div class="modern-card h-100">
@@ -306,8 +393,17 @@ if ($q_rekening && $q_rekening->num_rows > 0) {
                                 <small class="text-muted fw-bold d-block mb-1" style="font-size: 11px;">NO REKENING</small>
                                 <span class="fw-extrabold fs-5 font-monospace" style="color: var(--bri-blue); letter-spacing: 1px;"><?= htmlspecialchars($rek['nomor_rekening']); ?></span>
                             </div>
+
+                            <div class="p-3 mt-2 rounded-4" style="background-color: #f8f9fa; border: 1px solid #dee2e6;">
+                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                    <small class="text-muted fw-bold" style="font-size: 10px;">SALDO SAAT INI (LIVE)</small>
+                                    <?= $status_badge; ?>
+                                </div>
+                                <h4 class="fw-bolder mb-1" style="color: var(--bri-black);">Rp <?= number_format($saldo_info['live'], 0, ',', '.'); ?></h4>
+                                <small class="text-muted fw-semibold" style="font-size: 10px;">Input modal terakhir: Rp <?= number_format($saldo_info['modal'], 0, ',', '.'); ?></small>
+                            </div>
                             
-                            <div class="mt-4 d-flex justify-content-between align-items-end">
+                            <div class="mt-3 d-flex justify-content-between align-items-end">
                                 <div>
                                     <small class="text-muted fw-bold d-block" style="font-size: 10px;">KOLOM DATABASE</small>
                                     <span class="badge bg-light text-dark border px-2 py-1 mt-1"><i class="bi bi-database me-1"></i><?= $rek['kolom_db']; ?></span>
@@ -327,6 +423,7 @@ if ($q_rekening && $q_rekening->num_rows > 0) {
         </div>
     </div>
 
+    <!-- MODAL TAMBAH REKENING -->
     <div class="modal fade" id="modalTambah" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
@@ -381,6 +478,7 @@ if ($q_rekening && $q_rekening->num_rows > 0) {
         </div>
     </div>
 
+    <!-- MODAL EDIT REKENING (LOOPING) -->
     <?php foreach($semua_rekening_flat as $rek): ?>
     <div class="modal fade" id="modalEdit<?= $rek['id']; ?>" tabindex="-1" aria-hidden="true">
         <div class="modal-dialog modal-dialog-centered">
@@ -395,8 +493,8 @@ if ($q_rekening && $q_rekening->num_rows > 0) {
                         
                         <div class="mb-4">
                             <label class="form-label fw-bold" style="color: var(--bri-black); font-size: 14px;">Nama Pemilik</label>
-                            <input class="form-control form-control-lg" list="listPemilikEdit" name="pemilik" value="<?= htmlspecialchars($rek['pemilik']); ?>" required>
-                            <datalist id="listPemilikEdit">
+                            <input class="form-control form-control-lg" list="listPemilikEdit<?= $rek['id']; ?>" name="pemilik" value="<?= htmlspecialchars($rek['pemilik']); ?>" required>
+                            <datalist id="listPemilikEdit<?= $rek['id']; ?>">
                                 <?php foreach($daftar_pemilik as $pem): ?>
                                     <option value="<?= htmlspecialchars($pem); ?>">
                                 <?php endforeach; ?>

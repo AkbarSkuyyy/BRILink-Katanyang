@@ -29,7 +29,7 @@ $total_cabang = !empty($row_total_cabang['total']) ? $row_total_cabang['total'] 
 
 
 // ==========================================
-// 2. KALKULASI SALDO MULTI-CABANG & REKENING
+// 2. KALKULASI SALDO MULTI-CABANG & REKENING (DIPERBAIKI)
 // ==========================================
 $data_monitoring = [];
 
@@ -45,10 +45,10 @@ $q_shift_aktif = $conn->query("
 
 if ($q_shift_aktif && $q_shift_aktif->num_rows > 0) {
     while($row = $q_shift_aktif->fetch_assoc()){
-        $uid = $row['user_id'];
+        $shift_id_saat_ini = $row['id']; // KUNCI PERBAIKAN: Mutasi dihitung berdasarkan Shift ID, BUKAN User ID!
         $cabang = $row['nama_cabang'];
         
-        // A. Hitung Semua Modal (Otomatis mendeteksi modal laci + semua rekening yang ditambahkan via kelola_rekening.php)
+        // A. Hitung Semua Modal Laci & Bank
         $total_semua_modal = 0;
         foreach($row as $key => $value) {
             if (strpos($key, 'modal_') === 0) { 
@@ -56,8 +56,8 @@ if ($q_shift_aktif && $q_shift_aktif->num_rows > 0) {
             }
         }
 
-        // B. Hitung Mutasi Hari Ini per Pekerja
-        $q_mutasi = $conn->query("SELECT jenis_transaksi, nominal, admin_fee FROM transactions WHERE tanggal = '$tanggal_hari_ini' AND user_id = '$uid'");
+        // B. Hitung Mutasi Hari Ini khusus pada Laci Shift Ini Saja
+        $q_mutasi = $conn->query("SELECT jenis_transaksi, nominal, admin_fee FROM transactions WHERE shift_id = '$shift_id_saat_ini'");
         $total_in = 0;
         $total_out = 0;
         $total_fee = 0;
@@ -65,9 +65,9 @@ if ($q_shift_aktif && $q_shift_aktif->num_rows > 0) {
         while($trx = $q_mutasi->fetch_assoc()){
             $total_fee += (float)$trx['admin_fee'];
             if ($trx['jenis_transaksi'] == 'Tarik Tunai') {
-                $total_out += (float)$trx['nominal']; // Uang keluar
+                $total_out += (float)$trx['nominal']; // Uang keluar dari kasir
             } elseif ($trx['jenis_transaksi'] != 'Tukar Uang') {
-                $total_in += (float)$trx['nominal']; // Uang masuk
+                $total_in += (float)$trx['nominal']; // Uang masuk ke kasir
             }
         }
         
