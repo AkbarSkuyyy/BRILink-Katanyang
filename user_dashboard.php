@@ -56,6 +56,12 @@ $tgl_shift = isset($shift_aktif['tanggal']) ? $shift_aktif['tanggal'] : $tanggal
 // AUTO-FIX DATABASE UNTUK MENCEGAH ERROR 500
 $conn->query("ALTER TABLE transactions MODIFY jenis_transaksi VARCHAR(100) NOT NULL");    
 
+// MENAMBAHKAN FITUR "SUMBER BIAYA ADMIN" SECARA OTOMATIS KE DATABASE
+$check_admin_src = $conn->query("SHOW COLUMNS FROM transactions LIKE 'admin_source'");
+if ($check_admin_src && $check_admin_src->num_rows == 0) {
+    $conn->query("ALTER TABLE transactions ADD admin_source VARCHAR(10) NOT NULL DEFAULT 'CASH'");
+}
+
 $conn->query("CREATE TABLE IF NOT EXISTS uang_receh (
     id INT AUTO_INCREMENT PRIMARY KEY,
     cabang_id INT NOT NULL,
@@ -102,8 +108,9 @@ if (isset($_POST['submit_setor_bos'])) {
     $waktu = date('H:i:s');
     $keterangan_full = "Penyetor: " . $penyetor . ($catatan ? " | Catatan: " . $catatan : "");
 
-    $q_insert = $conn->query("INSERT INTO transactions (shift_id, tanggal, waktu, jenis_transaksi, bank_agen, nominal, admin_fee, keterangan) 
-                              VALUES ('$shift_id', '$tanggal_hari_ini', '$waktu', 'Setor Dana Bos', '$target_dana', '$nominal', 0, '$keterangan_full')");
+    // Setor Bos tidak ada admin, otomatis admin_source nya CASH (tidak berpengaruh karena 0)
+    $q_insert = $conn->query("INSERT INTO transactions (shift_id, user_id, tanggal, waktu, jenis_transaksi, bank_agen, nominal, admin_fee, keterangan, admin_source) 
+                              VALUES ('$shift_id', '$user_id', '$tanggal_hari_ini', '$waktu', 'Setor Dana Bos', '$target_dana', '$nominal', 0, '$keterangan_full', 'CASH')");
     
     if ($q_insert) {
         $trx_id = $conn->insert_id;
@@ -132,11 +139,14 @@ if (isset($_POST['simpan_transaksi']) && !$cabang_dibekukan) {
     $nominal = !empty($_POST['nominal']) ? (float)str_replace('.', '', $_POST['nominal']) : 0;
     
     $admin = ($jenis == 'Tarik Dana Bos' || $jenis == 'Setor Dana Bos') ? 0 : (!empty($_POST['admin_fee']) ? (float)str_replace('.', '', $_POST['admin_fee']) : 0);
+    
+    // Fitur Baru: Menangkap Sumber Admin dari Form
+    $admin_source = isset($_POST['admin_source']) ? $_POST['admin_source'] : 'CASH';
 
     $validasi_lolos = true;
     $pesan_error = "";
     
-    // Validasi Laci
+    // Validasi Kecukupan Uang Laci Fisik
     if ($jenis == 'Tarik Tunai' || ($jenis == 'Pengeluaran / Rugi' && $bank_agen == 'CASH') || ($jenis == 'Tarik Dana Bos' && $bank_agen == 'CASH')) {
         $q_in_cash_tmp = $conn->query("SELECT SUM(nominal) as tot FROM transactions WHERE shift_id = '$sid' AND tanggal >= '$tgl_shift' AND (jenis_transaksi NOT IN ('Tarik Tunai', 'Tukar Uang', 'Pengeluaran / Rugi', 'Tarik Dana Bos', 'Setor Dana Bos') OR (jenis_transaksi = 'Setor Dana Bos' AND bank_agen = 'CASH'))");
         $in_cash_val = ($q_in_cash_tmp && $row = $q_in_cash_tmp->fetch_assoc()) ? ($row['tot'] ?? 0) : 0;
@@ -144,7 +154,8 @@ if (isset($_POST['simpan_transaksi']) && !$cabang_dibekukan) {
         $q_keluar_tmp = $conn->query("SELECT SUM(nominal) as tot FROM transactions WHERE shift_id = '$sid' AND tanggal >= '$tgl_shift' AND (jenis_transaksi = 'Tarik Tunai' OR (jenis_transaksi IN ('Pengeluaran / Rugi', 'Tarik Dana Bos') AND bank_agen = 'CASH'))");
         $keluar_val = ($q_keluar_tmp && $row = $q_keluar_tmp->fetch_assoc()) ? ($row['tot'] ?? 0) : 0;
         
-        $q_admin_cash_tmp = $conn->query("SELECT SUM(admin_fee) as tot FROM transactions WHERE shift_id = '$sid' AND tanggal >= '$tgl_shift' AND jenis_transaksi NOT IN ('Tarik Tunai', 'Pengeluaran / Rugi', 'Tarik Dana Bos', 'Setor Dana Bos')");
+        // PENTING: Hanya Admin dengan status 'CASH' yang dianggap masuk laci!
+        $q_admin_cash_tmp = $conn->query("SELECT SUM(admin_fee) as tot FROM transactions WHERE shift_id = '$sid' AND tanggal >= '$tgl_shift' AND admin_source = 'CASH' AND jenis_transaksi != 'Pengeluaran / Rugi'");
         $admin_cash_val = ($q_admin_cash_tmp && $row = $q_admin_cash_tmp->fetch_assoc()) ? ($row['tot'] ?? 0) : 0;
         
         $tmp_saldo_fisik = (isset($shift_aktif['modal_awal']) ? $shift_aktif['modal_awal'] : 0) + $in_cash_val + $admin_cash_val - $keluar_val;
@@ -154,19 +165,23 @@ if (isset($_POST['simpan_transaksi']) && !$cabang_dibekukan) {
             $pesan_error = "Transaksi Ditolak! Uang di Laci Fisik Anda tidak cukup.";
         }
     } 
-    // Validasi Digital
+    // Validasi Kecukupan Saldo Digital (M-Banking)
     else if ($jenis != 'Tukar Uang Receh' && $jenis != 'Tukar Uang' && $jenis != 'Setor Dana Bos') {
         if ($bank_agen != 'CASH' && $bank_agen != '-') {
             $b_col_tmp = $db_map[$bank_agen] ?? '';
             $modal_bank_tmp = isset($shift_aktif[$b_col_tmp]) ? (float)$shift_aktif[$b_col_tmp] : 0;
             
-            $q_in_b_tmp = $conn->query("SELECT SUM(CASE WHEN jenis_transaksi = 'Tarik Tunai' THEN nominal + admin_fee ELSE nominal END) as tot FROM transactions WHERE shift_id = '$sid' AND tanggal >= '$tgl_shift' AND jenis_transaksi IN ('Tarik Tunai', 'Setor Dana Bos') AND bank_agen = '$bank_agen'");
+            $q_in_b_tmp = $conn->query("SELECT SUM(nominal) as tot FROM transactions WHERE shift_id = '$sid' AND tanggal >= '$tgl_shift' AND jenis_transaksi IN ('Tarik Tunai', 'Setor Dana Bos') AND bank_agen = '$bank_agen'");
             $in_b_val = ($q_in_b_tmp && $row = $q_in_b_tmp->fetch_assoc()) ? ($row['tot'] ?? 0) : 0;
             
+            // PENTING: Jika admin dibayar via potong saldo, saldo bertambah!
+            $q_admin_b_tmp = $conn->query("SELECT SUM(admin_fee) as tot FROM transactions WHERE shift_id = '$sid' AND tanggal >= '$tgl_shift' AND admin_source = 'SALDO' AND bank_agen = '$bank_agen'");
+            $admin_b_val = ($q_admin_b_tmp && $row = $q_admin_b_tmp->fetch_assoc()) ? ($row['tot'] ?? 0) : 0;
+
             $q_out_b_tmp = $conn->query("SELECT SUM(nominal) as tot FROM transactions WHERE shift_id = '$sid' AND tanggal >= '$tgl_shift' AND jenis_transaksi NOT IN ('Tarik Tunai', 'Tukar Uang', 'Setor Dana Bos') AND bank_agen = '$bank_agen'");
             $out_b_val = ($q_out_b_tmp && $row = $q_out_b_tmp->fetch_assoc()) ? ($row['tot'] ?? 0) : 0;
             
-            $tmp_saldo_bank = $modal_bank_tmp + $in_b_val - $out_b_val;
+            $tmp_saldo_bank = $modal_bank_tmp + $in_b_val + $admin_b_val - $out_b_val;
             
             if ($nominal > $tmp_saldo_bank) {
                 $validasi_lolos = false;
@@ -197,8 +212,9 @@ if (isset($_POST['simpan_transaksi']) && !$cabang_dibekukan) {
     if ($jenis == 'Buka Rekening Baru') { $jenis = 'Buka Rekening'; }
 
     $waktu = date('H:i:s');
-    $stmt = $conn->prepare("INSERT INTO transactions (user_id, shift_id, tanggal, waktu, jenis_transaksi, bank_agen, nominal, admin_fee, keterangan) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
-    $stmt->bind_param("iisssssds", $user_id, $sid, $tanggal_hari_ini, $waktu, $jenis, $bank_agen, $nominal, $admin, $ket);
+    // Memasukkan input admin_source
+    $stmt = $conn->prepare("INSERT INTO transactions (user_id, shift_id, tanggal, waktu, jenis_transaksi, bank_agen, nominal, admin_fee, keterangan, admin_source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+    $stmt->bind_param("iissssddss", $user_id, $sid, $tanggal_hari_ini, $waktu, $jenis, $bank_agen, $nominal, $admin, $ket, $admin_source);
     
     if($stmt->execute()) { 
         $_SESSION['flash_success'] = "Transaksi Berhasil Disimpan!";
@@ -223,24 +239,32 @@ $uang_keluar = ($q_keluar && $row = $q_keluar->fetch_assoc()) ? ($row['tot'] ?? 
 $q_admin_fee = $conn->query("SELECT SUM(admin_fee) as tot FROM transactions WHERE shift_id = '$sid' AND tanggal >= '$tgl_shift'");
 $admin_hari_ini = ($q_admin_fee && $row = $q_admin_fee->fetch_assoc()) ? ($row['tot'] ?? 0) : 0;
 
-$q_admin_cash = $conn->query("SELECT SUM(admin_fee) as tot FROM transactions WHERE shift_id = '$sid' AND tanggal >= '$tgl_shift' AND jenis_transaksi NOT IN ('Tarik Tunai', 'Pengeluaran / Rugi', 'Tarik Dana Bos', 'Setor Dana Bos')");
+// Menghitung Admin yang betul-benar dibayarkan secara Tunai
+$q_admin_cash = $conn->query("SELECT SUM(admin_fee) as tot FROM transactions WHERE shift_id = '$sid' AND tanggal >= '$tgl_shift' AND admin_source = 'CASH' AND jenis_transaksi != 'Pengeluaran / Rugi'");
 $admin_cash = ($q_admin_cash && $row = $q_admin_cash->fetch_assoc()) ? ($row['tot'] ?? 0) : 0;
 
 $q_rugi = $conn->query("SELECT SUM(nominal) as tot FROM transactions WHERE shift_id = '$sid' AND tanggal >= '$tgl_shift' AND jenis_transaksi = 'Pengeluaran / Rugi'");
 $rugi_hari_ini = ($q_rugi && $row = $q_rugi->fetch_assoc()) ? ($row['tot'] ?? 0) : 0;
 
+// Rumus Akhir Laci Fisik (Sangat Akurat)
 $saldo_fisik_sekarang = $modal_awal_laci + $uang_masuk + $admin_cash - $uang_keluar;
 
+// Rumus Akhir Saldo Digital Per Bank
 foreach($valid_banks as $b_name) {
     $b_col = isset($db_map[$b_name]) ? $db_map[$b_name] : '';
-    $q_in_b = $conn->query("SELECT SUM(CASE WHEN jenis_transaksi = 'Tarik Tunai' THEN nominal + admin_fee ELSE nominal END) as tot FROM transactions WHERE shift_id = '$sid' AND tanggal >= '$tgl_shift' AND jenis_transaksi IN ('Tarik Tunai', 'Setor Dana Bos') AND bank_agen = '$b_name'");
+    $modal_bank = ($b_col && isset($shift_aktif[$b_col])) ? (float)$shift_aktif[$b_col] : 0;
+
+    $q_in_b = $conn->query("SELECT SUM(nominal) as tot FROM transactions WHERE shift_id = '$sid' AND tanggal >= '$tgl_shift' AND jenis_transaksi IN ('Tarik Tunai', 'Setor Dana Bos') AND bank_agen = '$b_name'");
     $in_b = ($q_in_b && $row = $q_in_b->fetch_assoc()) ? ($row['tot'] ?? 0) : 0;
+    
+    // Tambahkan Biaya Admin ke Saldo Bank jika Kasir memilih sumber "SALDO"
+    $q_admin_b = $conn->query("SELECT SUM(admin_fee) as tot FROM transactions WHERE shift_id = '$sid' AND tanggal >= '$tgl_shift' AND admin_source = 'SALDO' AND bank_agen = '$b_name'");
+    $admin_b = ($q_admin_b && $row = $q_admin_b->fetch_assoc()) ? ($row['tot'] ?? 0) : 0;
     
     $q_out_b = $conn->query("SELECT SUM(nominal) as tot FROM transactions WHERE shift_id = '$sid' AND tanggal >= '$tgl_shift' AND jenis_transaksi NOT IN ('Tarik Tunai', 'Tukar Uang', 'Setor Dana Bos') AND bank_agen = '$b_name'");
     $out_b = ($q_out_b && $row = $q_out_b->fetch_assoc()) ? ($row['tot'] ?? 0) : 0;
     
-    $modal_bank = ($b_col && isset($shift_aktif[$b_col])) ? (float)$shift_aktif[$b_col] : 0;
-    $saldo_bank_ini = $modal_bank + $in_b - $out_b;
+    $saldo_bank_ini = $modal_bank + $in_b + $admin_b - $out_b;
     $saldo_per_bank[$b_name] = $saldo_bank_ini;
     $total_saldo_digital += $saldo_bank_ini;
 }
@@ -249,7 +273,7 @@ if (isset($_POST['koreksi_laci'])) {
     $saldo_riil_baru = (float)str_replace('.', '', $_POST['modal_baru']);
     if ($saldo_riil_baru < $saldo_fisik_sekarang) {
         $selisih = $saldo_fisik_sekarang - $saldo_riil_baru;
-        $conn->query("INSERT INTO transactions (user_id, shift_id, tanggal, jenis_transaksi, bank_agen, nominal, admin_fee, keterangan) VALUES ('$user_id', '$sid', '$tanggal_hari_ini', 'Pengeluaran / Rugi', 'CASH', '$selisih', 0, 'Selisih Kurang Laci Fisik')");
+        $conn->query("INSERT INTO transactions (user_id, shift_id, tanggal, jenis_transaksi, bank_agen, nominal, admin_fee, keterangan, admin_source) VALUES ('$user_id', '$sid', '$tanggal_hari_ini', 'Pengeluaran / Rugi', 'CASH', '$selisih', 0, 'Selisih Kurang Laci Fisik', 'CASH')");
         $_SESSION['flash_error'] = "Kerugian Rp " . number_format($selisih, 0, ',', '.') . " dicatat.";
     } elseif ($saldo_riil_baru > $saldo_fisik_sekarang) {
         $selisih = $saldo_riil_baru - $saldo_fisik_sekarang;
@@ -550,9 +574,17 @@ for ($i = 6; $i >= 0; $i--) {
                         </div>
                     </div>
 
+                    <div class="mb-3" id="formAdminSource">
+                        <label class="form-label text-muted small fw-bold">Sumber Biaya Admin (Penting!)</label>
+                        <select name="admin_source" id="selectAdminSource" class="form-select form-select-lg" style="border-radius: 12px; background-color: var(--bg-body);" required>
+                            <option value="CASH" class="fw-bold" style="color: #198754;">💵 Dibayar Tunai (Masuk Laci)</option>
+                            <option value="SALDO" class="fw-bold" style="color: #00529C;">💳 Potong Saldo (Stay di Rekening)</option>
+                        </select>
+                    </div>
+
                     <div class="mb-4 p-3 bg-light-blue-box rounded-3 d-flex justify-content-between align-items-center">
                         <span class="fw-bold small text-primary">Total Tagihan</span>
-                        <span class="fw-bolder fs-3 text-dark">Rp 0</span>
+                        <span class="fw-bolder fs-3 text-dark" id="teksTotal">Rp 0</span>
                     </div>
 
                     <div class="mb-4">
@@ -636,6 +668,7 @@ for ($i = 6; $i >= 0; $i--) {
         let formBank = document.getElementById('formBankAgen'); 
         let selectBank = document.getElementById('selectBankAgen');
         let dynamicFields = document.getElementById('dynamicServiceFields');
+        let formAdminSource = document.getElementById('formAdminSource'); // Field Sumber Admin
         let inputNom = document.getElementById('inputNominal');
         let inputKet = document.getElementById('inputKeterangan');
         let labelKet = document.getElementById('labelKeterangan');
@@ -644,6 +677,7 @@ for ($i = 6; $i >= 0; $i--) {
 
         formPecahan.style.display = 'none';
         formBank.style.display = 'block'; selectBank.required = true;
+        formAdminSource.style.display = 'block'; // Default tampil
         inputNom.readOnly = false; inputKet.readOnly = false;
         inputAdmin.readOnly = false; inputAdmin.value = ''; 
         labelKet.innerHTML = 'No Tujuan / Keterangan';
@@ -654,6 +688,7 @@ for ($i = 6; $i >= 0; $i--) {
         if (jenis === 'Tukar Uang Receh' || jenis === 'Tukar Uang') {
             formPecahan.style.display = 'block';
             formBank.style.display = 'none'; selectBank.required = false;
+            formAdminSource.style.display = 'none'; // Tukar Uang tidak pakai sumber admin UI
             inputNom.readOnly = true; inputKet.readOnly = true;
             labelKet.innerHTML = 'Rincian Keluar (Otomatis)';
             hitungPecahan(); return;
@@ -664,6 +699,7 @@ for ($i = 6; $i >= 0; $i--) {
         if (jenis === 'Tarik Dana Bos') {
             labelNom.innerHTML = 'Nominal Ditarik Bos (Rp)';
             inputAdmin.readOnly = true; inputAdmin.value = '0';
+            formAdminSource.style.display = 'none';
             htmlFields = `<div class="mb-3"><input type="text" id="field_general" class="form-control form-control-sm trigger-compile" placeholder="Keperluan Tarik Bos" required></div>`;
         } else if (jenis === 'Buka Rekening Baru') {
             labelNom.innerHTML = 'Setoran Awal (Rp)';
@@ -673,6 +709,7 @@ for ($i = 6; $i >= 0; $i--) {
         } else if (jenis === 'Pengeluaran / Rugi') {
             labelNom.innerHTML = 'Nominal Pengeluaran (Rp)';
             inputAdmin.readOnly = true; inputAdmin.value = '0';
+            formAdminSource.style.display = 'none';
             htmlFields = `<div class="mb-3"><input type="text" id="field_general" class="form-control form-control-sm trigger-compile" placeholder="Alasan Rugi" required></div>`;
         } else {
             htmlFields = `<div class="mb-3"><input type="text" id="field_general" class="form-control form-control-sm trigger-compile" placeholder="Keterangan / Ref (Opsional)"></div>`;
@@ -751,7 +788,7 @@ for ($i = 6; $i >= 0; $i--) {
 
         if (jenis === 'Tarik Tunai' || (jenis === 'Pengeluaran / Rugi' && bank === 'CASH') || (jenis === 'Tarik Dana Bos' && bank === 'CASH')) {
             if (nominal > dataSaldo['CASH']) { e.preventDefault(); Swal.fire({ icon: 'error', title: 'Uang Laci Kurang!', text: 'Sisa uang fisik Anda hanya Rp ' + formatRp(dataSaldo['CASH']) + '.', confirmButtonColor: '#d33' }); }
-        } else if (jenis !== 'Tukar Uang Receh' && jenis !== 'Tukar Uang') {
+        } else if (jenis !== 'Tukar Uang Receh' && jenis !== 'Tukar Uang' && jenis !== 'Setor Dana Bos') {
             if (bank && bank !== 'CASH') {
                 if (nominal > dataSaldo[bank]) { e.preventDefault(); Swal.fire({ icon: 'error', title: 'Saldo Rekening Kurang!', text: 'Sisa saldo rekening ' + bank + ' Anda hanya Rp ' + formatRp(dataSaldo[bank]) + '.', confirmButtonColor: '#d33' }); }
             }
