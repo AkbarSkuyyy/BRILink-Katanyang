@@ -1,6 +1,9 @@
 <?php
 session_start();
 
+// MENGATUR ZON MASA KE WIB (Sangat penting agar tanggal shift dan struk tidak meleset)
+date_default_timezone_set('Asia/Jakarta');
+
 $hostname = "localhost";
 $username = "juandade_brilink";
 $password = "brilink123!";
@@ -35,9 +38,21 @@ function catatLog($conn, $aktivitas, $custom_user_id = null) {
         $ip_address = trim(explode(',', $_SERVER['HTTP_X_FORWARDED_FOR'])[0]);
     }
     
+    // Menggunakan Prepared Statement untuk mencegah SQL Injection pada fungsi Log
     $stmt = $conn->prepare("INSERT INTO log_aktivitas (user_id, aktivitas, ip_address) VALUES (?, ?, ?)");
     $stmt->bind_param("iss", $user_id, $aktivitas, $ip_address);
     $stmt->execute();
+}
+
+// 3. Auto-Create Table Pengaturan (Untuk Timer Login)
+$conn->query("CREATE TABLE IF NOT EXISTS pengaturan (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    nama_setting VARCHAR(50) NOT NULL,
+    nilai_setting VARCHAR(100) NOT NULL
+)");
+$cek_setting = $conn->query("SELECT id FROM pengaturan WHERE nama_setting = 'lockout_time'");
+if ($cek_setting && $cek_setting->num_rows == 0) {
+    $conn->query("INSERT INTO pengaturan (nama_setting, nilai_setting) VALUES ('lockout_time', '300')");
 }
 
 // Panggil Engine Telegram

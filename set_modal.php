@@ -2,6 +2,9 @@
 require 'config.php';
 if (session_status() == PHP_SESSION_NONE) { session_start(); }
 
+// Keamanan Tambahan: Pastikan Waktu Server Akurat
+date_default_timezone_set('Asia/Jakarta');
+
 if (!isset($_SESSION['role']) || $_SESSION['role'] != 'user') { header("Location: index.php"); exit; }
 
 $user_id = $_SESSION['user_id'];
@@ -9,8 +12,8 @@ $tanggal_hari_ini = date('Y-m-d');
 
 $q_user = $conn->query("SELECT cabang_id, shift_ke, assigned_banks FROM users WHERE id = '$user_id'");
 $user_info = $q_user ? $q_user->fetch_assoc() : [];
-$cabang_id = !empty($user_info['cabang_id']) ? $user_info['cabang_id'] : 0;
-$shift_pegawai = !empty($user_info['shift_ke']) ? $user_info['shift_ke'] : 1;
+$cabang_id = !empty($user_info['cabang_id']) ? (int)$user_info['cabang_id'] : 0;
+$shift_pegawai = !empty($user_info['shift_ke']) ? (int)$user_info['shift_ke'] : 1;
 
 $assigned_banks_str = $user_info['assigned_banks'] ?? '';
 $assigned_banks_array = $assigned_banks_str ? array_map('trim', explode(',', $assigned_banks_str)) : [];
@@ -32,43 +35,64 @@ foreach($assigned_banks as $b) {
     if(isset($db_map[$b])) { $valid_banks[] = $b; }
 }
 
-// --- PROSES BUKA SHIFT UNIVERSAL ---
+// =========================================================
+// PROSES BUKA SHIFT UNIVERSAL (ANTI SQL INJECTION)
+// =========================================================
 if (isset($_POST['mulai_shift'])) {
     $modal_awal = (float)str_replace('.', '', $_POST['modal_awal'] ?? '0');
+    
+    // Membangun Prepared Statement dinamis
     $cols = ['user_id', 'tanggal', 'shift_ke', 'modal_awal', 'status'];
-    $vals = ["'$user_id'", "'$tanggal_hari_ini'", "'$shift_pegawai'", "'$modal_awal'", "'aktif'"];
+    $placeholders = ['?', '?', '?', '?', '?'];
+    $types = "isids"; // i=int, s=string, d=double/float
+    $params = [$user_id, $tanggal_hari_ini, $shift_pegawai, $modal_awal, 'aktif'];
 
     foreach($valid_banks as $bank) {
-        $col_name = $db_map[$bank];
-        $val = (float)str_replace('.', '', $_POST[$col_name] ?? '0');
-        $cols[] = $col_name;
-        $vals[] = "'$val'";
+        if(isset($db_map[$bank])) {
+            $col_name = $db_map[$bank];
+            $val = (float)str_replace('.', '', $_POST[$col_name] ?? '0');
+            $cols[] = $col_name;
+            $placeholders[] = '?';
+            $types .= "d";
+            $params[] = $val;
+        }
     }
 
-    $str_cols = implode(', ', $cols);
-    $str_vals = implode(', ', $vals);
-
-    try {
-        $insert = $conn->query("INSERT INTO shifts ($str_cols) VALUES ($str_vals)");
-        if($insert) {
-            if(function_exists('notifShiftBuka')) notifShiftBuka($_SESSION['nama_cabang'] ?? 'Cabang', $shift_pegawai, $modal_awal);
-            $_SESSION['flash_success'] = "Laci Shift $shift_pegawai berhasil dibuka! Selamat bertransaksi.";
-        } else {
-            $_SESSION['flash_error'] = "Gagal membuka shift. Silakan coba lagi.";
+    $sql = "INSERT INTO shifts (" . implode(', ', $cols) . ") VALUES (" . implode(', ', $placeholders) . ")";
+    $stmt = $conn->prepare($sql);
+    
+    if ($stmt) {
+        $stmt->bind_param($types, ...$params);
+        try {
+            if($stmt->execute()) {
+                if(function_exists('notifShiftBuka')) notifShiftBuka($_SESSION['nama_cabang'] ?? 'Cabang', $shift_pegawai, $modal_awal);
+                $_SESSION['flash_success'] = "Laci Shift $shift_pegawai berhasil dibuka! Selamat bertransaksi.";
+            } else {
+                $_SESSION['flash_error'] = "Gagal membuka shift. Silakan coba lagi.";
+            }
+        } catch (Exception $e) {
+            $_SESSION['flash_error'] = "Terjadi Kesalahan SQL: " . $e->getMessage();
         }
-    } catch (Exception $e) {
-        $_SESSION['flash_error'] = "Terjadi Kesalahan SQL: " . $e->getMessage();
+        $stmt->close();
+    } else {
+        $_SESSION['flash_error'] = "Gagal menyiapkan query database.";
     }
     header("Location: set_modal.php"); exit;
 }
 
-// --- PROSES TUTUP SHIFT ---
+// =========================================================
+// PROSES TUTUP SHIFT (PENGAMANAN TIPE DATA)
+// =========================================================
 if (isset($_POST['tutup_shift'])) {
-    $shift_id_aktif = $_POST['shift_id_aktif'];
+    // Memaksa input menjadi Integer untuk menolak injeksi teks asing
+    $shift_id_aktif = (int)$_POST['shift_id_aktif']; 
+    
     try {
-        $conn->query("UPDATE shifts SET status = 'selesai' WHERE id = '$shift_id_aktif'");
-        if(function_exists('notifShiftTutup')) notifShiftTutup($_SESSION['nama_cabang'] ?? 'Cabang', $shift_pegawai);
+        $stmt = $conn->prepare("UPDATE shifts SET status = 'selesai' WHERE id = ?");
+        $stmt->bind_param("i", $shift_id_aktif);
+        $stmt->execute();
         
+        if(function_exists('notifShiftTutup')) notifShiftTutup($_SESSION['nama_cabang'] ?? 'Cabang', $shift_pegawai);
         $_SESSION['flash_success'] = 'Shift Berhasil Diakhiri. Laporan Telah Terkunci.';
     } catch (Exception $e) {
         $_SESSION['flash_error'] = "Gagal mengakhiri shift: " . $e->getMessage();
@@ -76,19 +100,25 @@ if (isset($_POST['tutup_shift'])) {
     header("Location: set_modal.php"); exit;
 }
 
-// --- PROSES TAMBAH MODAL DI TENGAH SHIFT ---
+// =========================================================
+// PROSES TAMBAH MODAL DI TENGAH SHIFT
+// =========================================================
 if (isset($_POST['tambah_modal_aktif'])) {
-    $shift_id_aktif = $_POST['shift_id_aktif'];
+    $shift_id_aktif = (int)$_POST['shift_id_aktif']; // Memaksa menjadi angka
     $jenis_modal    = $_POST['jenis_modal'] ?? '';
     $nominal_tambah = (float)str_replace('.', '', $_POST['nominal_tambah'] ?? '0');
 
     $nama_kolom = '';
+    // Memastikan kolom yang diupdate hanya kolom yang terdaftar (mencegah manipulasi)
     if ($jenis_modal == 'CASH') { $nama_kolom = 'modal_awal'; }
     elseif (isset($db_map[$jenis_modal])) { $nama_kolom = $db_map[$jenis_modal]; }
 
     if ($nama_kolom != '') {
         try {
-            $conn->query("UPDATE shifts SET $nama_kolom = $nama_kolom + $nominal_tambah WHERE id = '$shift_id_aktif'");
+            $stmt = $conn->prepare("UPDATE shifts SET $nama_kolom = $nama_kolom + ? WHERE id = ?");
+            $stmt->bind_param("di", $nominal_tambah, $shift_id_aktif);
+            $stmt->execute();
+            
             $_SESSION['flash_success'] = "Modal tambahan Rp " . number_format($nominal_tambah, 0, ',', '.') . " berhasil dimasukkan ke $jenis_modal.";
         } catch (Exception $e) {
             $_SESSION['flash_error'] = "Gagal update modal tambahan: " . $e->getMessage();
@@ -97,7 +127,7 @@ if (isset($_POST['tambah_modal_aktif'])) {
     }
 }
 
-// CEK STATUS SHIFT & KALKULASI SALDO BERJALAN (SINKRON DENGAN DANA BOS)
+// CEK STATUS SHIFT & KALKULASI SALDO BERJALAN
 $q_shift_saya = $conn->query("SELECT * FROM shifts WHERE user_id = '$user_id' AND tanggal = '$tanggal_hari_ini' ORDER BY id DESC LIMIT 1");
 $shift_saya = $q_shift_saya ? $q_shift_saya->fetch_assoc() : null;
 
@@ -126,11 +156,9 @@ if ($shift_saya && $shift_saya['status'] == 'aktif') {
     foreach($valid_banks as $b_name) {
         $b_col = $db_map[$b_name];
         
-        // Digital IN
         $q_in_b = $conn->query("SELECT SUM(CASE WHEN jenis_transaksi = 'Tarik Tunai' THEN nominal + admin_fee ELSE nominal END) as tot FROM transactions WHERE shift_id = '$sid' AND tanggal >= '$tgl_shift' AND jenis_transaksi IN ('Tarik Tunai', 'Setor Dana Bos') AND bank_agen = '$b_name'");
         $in_b = ($q_in_b && $row = $q_in_b->fetch_assoc()) ? ($row['tot'] ?? 0) : 0;
         
-        // Digital OUT
         $q_out_b = $conn->query("SELECT SUM(nominal) as tot FROM transactions WHERE shift_id = '$sid' AND tanggal >= '$tgl_shift' AND jenis_transaksi NOT IN ('Tarik Tunai', 'Tukar Uang', 'Setor Dana Bos') AND bank_agen = '$b_name'");
         $out_b = ($q_out_b && $row = $q_out_b->fetch_assoc()) ? ($row['tot'] ?? 0) : 0;
         

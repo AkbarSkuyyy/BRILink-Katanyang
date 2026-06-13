@@ -1,8 +1,41 @@
 <?php
 require 'config.php';
+
+// Sinkronisasi Waktu
+date_default_timezone_set('Asia/Jakarta');
+
 if (!isset($_SESSION['role']) || $_SESSION['role'] != 'admin') { header("Location: index.php"); exit; }
 
 $tanggal_hari_ini = date('Y-m-d');
+
+// ==========================================
+// PROSES SIMPAN PENGATURAN TIMER
+// ==========================================
+if (isset($_POST['simpan_pengaturan'])) {
+    $timer_baru = (int)$_POST['lockout_time'];
+    $conn->query("UPDATE pengaturan SET nilai_setting = '$timer_baru' WHERE nama_setting = 'lockout_time'");
+    $_SESSION['flash_success'] = "Durasi timer blokir berhasil diperbarui menjadi $timer_baru detik!";
+    header("Location: admin_dashboard.php"); exit;
+}
+
+// Ambil data pengaturan saat ini untuk ditampilkan di form
+$q_setting = $conn->query("SELECT nilai_setting FROM pengaturan WHERE nama_setting = 'lockout_time'");
+$setting_data = $q_setting ? $q_setting->fetch_assoc() : null;
+$current_timer = isset($setting_data['nilai_setting']) ? (int)$setting_data['nilai_setting'] : 300;
+
+// ==========================================
+// PROSES BUKA BLOKIR AKUN KASIR/ADMIN
+// ==========================================
+if (isset($_POST['buka_blokir'])) {
+    $id_user_blokir = (int)$_POST['id_user_blokir'];
+    $conn->query("UPDATE users SET login_attempts = 0, lock_until = NULL WHERE id = '$id_user_blokir'");
+    $_SESSION['flash_success'] = "Akun berhasil dibuka blokirnya dan bisa login kembali!";
+    header("Location: admin_dashboard.php"); exit;
+}
+
+// Cek apakah ada akun yang sedang terblokir
+$q_blokir = $conn->query("SELECT u.*, c.nama_cabang FROM users u LEFT JOIN cabang c ON u.cabang_id = c.id WHERE u.lock_until > NOW()");
+$jumlah_diblokir = $q_blokir ? $q_blokir->num_rows : 0;
 
 // ==========================================
 // 1. MENGAMBIL DATA METRIK GLOBAL
@@ -29,62 +62,102 @@ $total_cabang = !empty($row_total_cabang['total']) ? $row_total_cabang['total'] 
 
 
 // ==========================================
-// 2. KALKULASI SALDO MULTI-CABANG & REKENING (DIPERBAIKI)
+// 2. KALKULASI SALDO MULTI-CABANG, REKENING & RECEH
 // ==========================================
 $data_monitoring = [];
 
-// Mengambil semua shift aktif beserta seluruh kolom rekening dinamis
+// Mapping Kolom Database Rekening
+$db_map = [];
+$q_rek = $conn->query("SELECT alias, kolom_db FROM rekening");
+if($q_rek) {
+    while($r = $q_rek->fetch_assoc()) { 
+        $db_map[trim($r['alias'])] = trim($r['kolom_db']); 
+    }
+}
+
+// Tarik data receh untuk dicocokkan dengan cabang
+$receh_data = [];
+$q_receh = $conn->query("SELECT * FROM uang_receh");
+if ($q_receh) {
+    while($r = $q_receh->fetch_assoc()){
+        $receh_data[$r['cabang_id']] = $r;
+    }
+}
+
+// Mengambil semua shift aktif
 $q_shift_aktif = $conn->query("
-    SELECT s.*, c.nama_cabang, u.username
+    SELECT s.*, c.nama_cabang, c.id as cabang_id, u.username, u.assigned_banks
     FROM shifts s
     JOIN users u ON s.user_id = u.id
     JOIN cabang c ON u.cabang_id = c.id
-    WHERE s.tanggal = '$tanggal_hari_ini'
+    WHERE s.tanggal = '$tanggal_hari_ini' AND s.status = 'aktif'
     ORDER BY c.nama_cabang ASC, s.shift_ke ASC
 ");
 
 if ($q_shift_aktif && $q_shift_aktif->num_rows > 0) {
     while($row = $q_shift_aktif->fetch_assoc()){
-        $shift_id_saat_ini = $row['id']; // KUNCI PERBAIKAN: Mutasi dihitung berdasarkan Shift ID, BUKAN User ID!
+        $shift_id_saat_ini = $row['id']; 
         $cabang = $row['nama_cabang'];
+        $cabang_id = $row['cabang_id'];
+        $tgl_shift = $row['tanggal'];
         
-        // A. Hitung Semua Modal Laci & Bank
-        $total_semua_modal = 0;
-        foreach($row as $key => $value) {
-            if (strpos($key, 'modal_') === 0) { 
-                $total_semua_modal += (float)$value;
-            }
-        }
+        $assigned_str = $row['assigned_banks'] ?? '';
+        $assigned_banks = $assigned_str ? array_unique(array_map('trim', explode(',', $assigned_str))) : [];
+        
+        $row['rincian_saldo'] = [];
+        $total_semua_saldo_shift = 0;
 
-        // B. Hitung Mutasi Hari Ini khusus pada Laci Shift Ini Saja
-        $q_mutasi = $conn->query("SELECT jenis_transaksi, nominal, admin_fee FROM transactions WHERE shift_id = '$shift_id_saat_ini'");
-        $total_in = 0;
-        $total_out = 0;
-        $total_fee = 0;
-        
-        while($trx = $q_mutasi->fetch_assoc()){
-            $total_fee += (float)$trx['admin_fee'];
-            if ($trx['jenis_transaksi'] == 'Tarik Tunai') {
-                $total_out += (float)$trx['nominal']; // Uang keluar dari kasir
-            } elseif ($trx['jenis_transaksi'] != 'Tukar Uang') {
-                $total_in += (float)$trx['nominal']; // Uang masuk ke kasir
+        // A. KALKULASI SALDO FISIK LACI (CASH)
+        $q_in_cash = $conn->query("SELECT SUM(nominal) as tot FROM transactions WHERE shift_id = '$shift_id_saat_ini' AND tanggal >= '$tgl_shift' AND (jenis_transaksi NOT IN ('Tarik Tunai', 'Tukar Uang', 'Pengeluaran / Rugi', 'Tarik Dana Bos', 'Setor Dana Bos') OR (jenis_transaksi = 'Setor Dana Bos' AND bank_agen = 'CASH'))");
+        $in_cash = ($q_in_cash && $r_in = $q_in_cash->fetch_assoc()) ? ($r_in['tot'] ?? 0) : 0;
+
+        $q_adm_cash = $conn->query("SELECT SUM(admin_fee) as tot FROM transactions WHERE shift_id = '$shift_id_saat_ini' AND tanggal >= '$tgl_shift' AND admin_source = 'CASH' AND jenis_transaksi != 'Pengeluaran / Rugi'");
+        $adm_cash = ($q_adm_cash && $r_adm = $q_adm_cash->fetch_assoc()) ? ($r_adm['tot'] ?? 0) : 0;
+
+        $q_out_cash = $conn->query("SELECT SUM(nominal) as tot FROM transactions WHERE shift_id = '$shift_id_saat_ini' AND tanggal >= '$tgl_shift' AND (jenis_transaksi = 'Tarik Tunai' OR (jenis_transaksi IN ('Pengeluaran / Rugi', 'Tarik Dana Bos') AND bank_agen = 'CASH'))");
+        $out_cash = ($q_out_cash && $r_out = $q_out_cash->fetch_assoc()) ? ($r_out['tot'] ?? 0) : 0;
+
+        $saldo_cash = $row['modal_awal'] + $in_cash + $adm_cash - $out_cash;
+        $row['rincian_saldo']['CASH'] = $saldo_cash;
+        $total_semua_saldo_shift += $saldo_cash;
+
+        // B. KALKULASI SALDO REKENING BANK
+        foreach($assigned_banks as $b_name) {
+            if(isset($db_map[$b_name])) {
+                $b_col = $db_map[$b_name];
+                $modal_bank = isset($row[$b_col]) ? (float)$row[$b_col] : 0;
+
+                $q_in_b = $conn->query("SELECT SUM(nominal) as tot FROM transactions WHERE shift_id = '$shift_id_saat_ini' AND tanggal >= '$tgl_shift' AND jenis_transaksi IN ('Tarik Tunai', 'Setor Dana Bos') AND bank_agen = '$b_name'");
+                $in_b = ($q_in_b && $r_in = $q_in_b->fetch_assoc()) ? ($r_in['tot'] ?? 0) : 0;
+                
+                $q_admin_b = $conn->query("SELECT SUM(admin_fee) as tot FROM transactions WHERE shift_id = '$shift_id_saat_ini' AND tanggal >= '$tgl_shift' AND admin_source = 'SALDO' AND bank_agen = '$b_name'");
+                $admin_b = ($q_admin_b && $r_adm = $q_admin_b->fetch_assoc()) ? ($r_adm['tot'] ?? 0) : 0;
+                
+                $q_out_b = $conn->query("SELECT SUM(nominal) as tot FROM transactions WHERE shift_id = '$shift_id_saat_ini' AND tanggal >= '$tgl_shift' AND jenis_transaksi NOT IN ('Tarik Tunai', 'Tukar Uang', 'Setor Dana Bos') AND bank_agen = '$b_name'");
+                $out_b = ($q_out_b && $r_out = $q_out_b->fetch_assoc()) ? ($r_out['tot'] ?? 0) : 0;
+                
+                $saldo_bank_ini = $modal_bank + $in_b + $admin_b - $out_b;
+                
+                // Masukkan ke array jika saldo tidak kosong
+                $row['rincian_saldo'][$b_name] = $saldo_bank_ini;
+                $total_semua_saldo_shift += $saldo_bank_ini;
             }
         }
         
-        // Saldo Riil Keseluruhan Pekerja Tersebut
-        $saldo_berjalan = $total_semua_modal + $total_in - $total_out + $total_fee;
-        $row['saldo_berjalan'] = $saldo_berjalan;
+        $row['saldo_berjalan'] = $total_semua_saldo_shift;
         
-        // C. Kelompokkan ke dalam array per cabang
+        // C. Kelompokkan ke dalam array per cabang & Masukkan Data Receh
         if (!isset($data_monitoring[$cabang])) {
             $data_monitoring[$cabang] = [
+                'cabang_id' => $cabang_id,
                 'total_saldo_cabang' => 0,
-                'shifts' => []
+                'shifts' => [],
+                'receh' => $receh_data[$cabang_id] ?? null
             ];
         }
         
         $data_monitoring[$cabang]['shifts'][] = $row;
-        $data_monitoring[$cabang]['total_saldo_cabang'] += $saldo_berjalan;
+        $data_monitoring[$cabang]['total_saldo_cabang'] += $total_semua_saldo_shift;
     }
 }
 
@@ -151,6 +224,7 @@ if ($q_pie) {
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
     <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style> 
         :root {
             --bg-body: #f4f7fa; 
@@ -188,6 +262,14 @@ if ($q_pie) {
         .table-wrapper thead th { position: sticky; top: 0; background-color: var(--bri-white); z-index: 1; border-bottom: 2px solid var(--bri-grey); color: var(--bri-black); font-weight: 700; padding: 15px; }
         .table-wrapper tbody td { padding: 15px; border-bottom: 1px solid var(--bri-grey); vertical-align: middle; }
 
+        .shift-card-hover { cursor: pointer; transition: all 0.2s ease-in-out; border: 1px solid var(--bri-light-blue); }
+        .shift-card-hover:hover { transform: translateY(-4px); box-shadow: 0 8px 20px rgba(0,82,156,0.15) !important; border-color: var(--bri-blue); }
+        
+        .modal-content { border-radius: 20px; border: none; }
+        .bg-light-blue-box { background-color: var(--bri-light-blue); border-radius: 16px; }
+
+        .swal2-popup { font-family: 'Montserrat', sans-serif !important; border-radius: 20px !important; }
+
         @media (max-width: 767.98px) {
             .main-content { margin-left: 0 !important; padding: 20px 15px !important; padding-top: 85px !important; }
             .switch-filter { display: flex; width: 100%; }
@@ -205,9 +287,14 @@ if ($q_pie) {
                 <p class="fw-medium mb-0" style="color: #6c757d;">Ringkasan aktivitas seluruh cabang BRILink pada <?= date('l, d M Y'); ?></p>
             </div>
             
-            <a href="laporan_global.php" class="btn btn-dark fw-bold rounded-pill px-4 shadow-sm align-self-start" style="padding: 12px 28px;">
-                <i class="bi bi-file-earmark-text me-2"></i> Laporan Lengkap
-            </a>
+            <div class="d-flex gap-2 align-self-start">
+                <button data-bs-toggle="modal" data-bs-target="#modalPengaturan" class="btn btn-outline-primary fw-bold rounded-pill shadow-sm bg-white" style="padding: 12px 20px;">
+                    <i class="bi bi-gear-fill me-2"></i> Pengaturan
+                </button>
+                <a href="laporan_global.php" class="btn btn-dark fw-bold rounded-pill px-4 shadow-sm" style="padding: 12px 28px;">
+                    <i class="bi bi-file-earmark-text me-2"></i> Laporan Lengkap
+                </a>
+            </div>
         </div>
 
         <div class="row g-3 mb-5">
@@ -243,6 +330,7 @@ if ($q_pie) {
 
         <div class="d-flex align-items-center mb-3 mt-2">
             <h4 class="fw-extrabold mb-0" style="color: var(--bri-black);"><i class="bi bi-display me-2 text-primary"></i>Live Monitoring Saldo Tiap Cabang</h4>
+            <span class="ms-3 badge bg-white text-primary border border-primary"><i class="bi bi-info-circle me-1"></i>Klik kartu shift untuk info rincian</span>
         </div>
         
         <div class="row g-4 mb-5">
@@ -259,7 +347,8 @@ if ($q_pie) {
                         
                         <div class="d-flex flex-column gap-3">
                             <?php foreach ($data['shifts'] as $shift): ?>
-                            <div class="p-3 rounded-4 shadow-sm" style="background-color: #f8fbff; border: 1px solid var(--bri-light-blue);">
+                            
+                            <div class="p-3 rounded-4 shadow-sm shift-card-hover" style="background-color: #f8fbff;" data-bs-toggle="modal" data-bs-target="#modalReceh_<?= $data['cabang_id'] ?>">
                                 <div class="d-flex justify-content-between align-items-center mb-2">
                                     <span class="fw-bold text-dark" style="font-size: 14px;">Shift <?= $shift['shift_ke']; ?> (<?= htmlspecialchars($shift['username']); ?>)</span>
                                     <?php $bg = ($shift['status'] == 'aktif') ? 'bg-primary' : 'bg-secondary'; ?>
@@ -270,6 +359,7 @@ if ($q_pie) {
                                     <span class="fw-bolder" style="color: var(--bri-blue); font-size: 16px;">Rp <?= number_format($shift['saldo_berjalan'], 0, ',', '.'); ?></span>
                                 </div>
                             </div>
+
                             <?php endforeach; ?>
                         </div>
                     </div>
@@ -366,12 +456,118 @@ if ($q_pie) {
         </div>
     </div>
 
+    <div class="modal fade" id="modalPengaturan" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content shadow-lg border-0 rounded-4">
+                <div class="modal-header border-bottom-0 pb-0 pt-4 px-4">
+                    <h5 class="modal-title fw-bolder text-dark"><i class="bi bi-gear-fill text-primary me-2"></i>Pengaturan Sistem</h5>
+                    <button type="button" class="btn-close shadow-none bg-light rounded-circle p-2" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body p-4">
+                    <form method="POST">
+                        <div class="mb-4">
+                            <label class="form-label text-muted small fw-bold text-uppercase">Durasi Timer Blokir Login</label>
+                            <p class="small text-muted mb-3">Atur berapa detik kasir/admin diblokir jika salah PIN 3x berturut-turut. (Default: 300 detik = 5 Menit).</p>
+                            <div class="input-group input-group-lg shadow-sm" style="border-radius: 12px; overflow: hidden;">
+                                <input type="number" name="lockout_time" class="form-control fw-bold border-0 bg-light text-center" value="<?= $current_timer; ?>" min="10" required>
+                                <span class="input-group-text bg-white border-0 fw-bold text-primary">Detik</span>
+                            </div>
+                        </div>
+                        <button type="submit" name="simpan_pengaturan" class="btn btn-primary w-100 py-3 fw-bold rounded-pill fs-6 shadow-sm" style="background: linear-gradient(135deg, var(--bri-blue), #003366); border: none;">Simpan Pengaturan</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <?php if (!empty($data_monitoring)): ?>
+        <?php foreach ($data_monitoring as $cabang => $data): 
+            $rc = $data['receh'];
+            $cid = $data['cabang_id'];
+            
+            // Format agar jika kosong menjadi 0
+            $q100 = $rc ? (int)$rc['qty_100k'] : 0;
+            $q50  = $rc ? (int)$rc['qty_50k']  : 0;
+            $q20  = $rc ? (int)$rc['qty_20k']  : 0;
+            $q10  = $rc ? (int)$rc['qty_10k']  : 0;
+            $q5   = $rc ? (int)$rc['qty_5k']   : 0;
+            $q2   = $rc ? (int)$rc['qty_2k']   : 0;
+            $q1   = $rc ? (int)$rc['qty_1k']   : 0;
+            $tot  = $rc ? (float)$rc['total']  : 0;
+            
+            // Fungsi pemberi warna jika kurang dari 20 lembar
+            function wWarna($qty) { return $qty <= 20 ? 'text-danger' : 'text-dark'; }
+        ?>
+        <div class="modal fade" id="modalReceh_<?= $cid ?>" tabindex="-1" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered modal-md">
+                <div class="modal-content shadow-lg border-0">
+                    <div class="modal-header border-bottom-0 pb-0 pt-4 px-4">
+                        <h5 class="modal-title fw-bolder text-dark"><i class="bi bi-display text-primary me-2"></i>Detail Cabang</h5>
+                        <button type="button" class="btn-close shadow-none bg-light rounded-circle p-2" data-bs-dismiss="modal"></button>
+                    </div>
+                    <div class="modal-body p-4 pt-2">
+                        <p class="text-primary fs-5 fw-bold text-uppercase text-center mb-4 pb-2 border-bottom" style="letter-spacing: 0.5px;"><?= htmlspecialchars($cabang); ?></p>
+                        
+                        <h6 class="fw-bold mb-3"><i class="bi bi-wallet2 me-2"></i>Rincian Saldo (Shift Aktif)</h6>
+                        <?php foreach($data['shifts'] as $shift): ?>
+                            <div class="p-3 mb-3 rounded-4 border" style="background-color: #f8fbff; border-color: #cce0ff !important;">
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <span class="fw-bold text-dark">Shift <?= $shift['shift_ke'] ?> (<?= htmlspecialchars($shift['username']) ?>)</span>
+                                    <span class="badge bg-primary fs-6">Rp <?= number_format($shift['saldo_berjalan'], 0, ',', '.') ?></span>
+                                </div>
+                                <div class="small mt-3">
+                                    <?php foreach($shift['rincian_saldo'] as $akun => $sld): ?>
+                                        <div class="d-flex justify-content-between border-bottom pb-1 mb-2">
+                                            <span class="text-muted fw-bold"><i class="bi <?= $akun=='CASH' ? 'bi-cash-stack text-success' : 'bi-bank text-primary' ?> me-2"></i><?= $akun ?></span>
+                                            <span class="fw-bolder text-dark">Rp <?= number_format($sld, 0, ',', '.') ?></span>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                            </div>
+                        <?php endforeach; ?>
+
+                        <h6 class="fw-bold mt-4 mb-3"><i class="bi bi-coin text-warning me-2"></i>Stok Uang Receh Cabang</h6>
+                        <div class="bg-white border rounded-4 p-3 shadow-sm">
+                            <div class="d-flex justify-content-between border-bottom pb-2 mb-2">
+                                <span class="text-muted fw-bold">Rp 100k</span> <span class="fw-bolder <?= wWarna($q100); ?>"><?= $q100 ?> lbr</span>
+                            </div>
+                            <div class="d-flex justify-content-between border-bottom pb-2 mb-2">
+                                <span class="text-muted fw-bold">Rp 50k</span> <span class="fw-bolder <?= wWarna($q50); ?>"><?= $q50 ?> lbr</span>
+                            </div>
+                            <div class="d-flex justify-content-between border-bottom pb-2 mb-2">
+                                <span class="text-muted fw-bold">Rp 20k</span> <span class="fw-bolder <?= wWarna($q20); ?>"><?= $q20 ?> lbr</span>
+                            </div>
+                            <div class="d-flex justify-content-between border-bottom pb-2 mb-2">
+                                <span class="text-muted fw-bold">Rp 10k</span> <span class="fw-bolder <?= wWarna($q10); ?>"><?= $q10 ?> lbr</span>
+                            </div>
+                            <div class="d-flex justify-content-between border-bottom pb-2 mb-2">
+                                <span class="text-muted fw-bold">Rp 5k</span> <span class="fw-bolder <?= wWarna($q5); ?>"><?= $q5 ?> lbr</span>
+                            </div>
+                            <div class="d-flex justify-content-between border-bottom pb-2 mb-2">
+                                <span class="text-muted fw-bold">Rp 2k</span> <span class="fw-bolder <?= wWarna($q2); ?>"><?= $q2 ?> lbr</span>
+                            </div>
+                            <div class="d-flex justify-content-between border-bottom pb-2 mb-2">
+                                <span class="text-muted fw-bold">Rp 1k</span> <span class="fw-bolder <?= wWarna($q1); ?>"><?= $q1 ?> kpg</span>
+                            </div>
+                            
+                            <div class="mt-4 p-3 bg-light-blue-box rounded-4 text-center">
+                                <small class="fw-bold text-primary d-block mb-1">TOTAL RECEH LACI</small>
+                                <h4 class="fw-bolder text-dark mb-0">Rp <?= number_format($tot, 0, ',', '.') ?></h4>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <?php endforeach; ?>
+    <?php endif; ?>
+
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
     <script>
         const formatRp = (value) => { return 'Rp ' + value.toLocaleString('id-ID'); };
 
-        // 1. GRAFIK GARIS (TREN LABA ADMIN)
+        // GRAFIK GARIS
         const ctxLine = document.getElementById('lineChart').getContext('2d');
         let gradientLine = ctxLine.createLinearGradient(0, 0, 0, 300);
         gradientLine.addColorStop(0, "rgba(0, 82, 156, 0.3)"); 
@@ -396,7 +592,7 @@ if ($q_pie) {
             }
         });
 
-        // 2. GRAFIK LINGKARAN (LAYANAN TERLARIS)
+        // GRAFIK LINGKARAN
         const ctxPie = document.getElementById('pieChart').getContext('2d');
         new Chart(ctxPie, {
             type: 'doughnut',
@@ -414,7 +610,7 @@ if ($q_pie) {
             }
         });
 
-        // 3. GRAFIK BATANG (BALANCE IN VS OUT)
+        // GRAFIK BATANG
         const ctxBar = document.getElementById('barChart').getContext('2d');
         new Chart(ctxBar, {
             type: 'bar',
@@ -434,6 +630,10 @@ if ($q_pie) {
                 }
             }
         });
+
+        <?php if (isset($_SESSION['flash_success'])): ?>
+            Swal.fire({ toast: true, position: 'top-end', showConfirmButton: false, timer: 3000, timerProgressBar: true, icon: 'success', title: '<?= $_SESSION['flash_success']; ?>' });
+        <?php unset($_SESSION['flash_success']); endif; ?>
     </script>
 </body>
 </html>
