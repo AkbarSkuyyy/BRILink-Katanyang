@@ -47,6 +47,8 @@ $current_page = basename($_SERVER['PHP_SELF']);
                 <li class="nav-item"><a href="kelola_rekening.php" class="nav-link-modern text-decoration-none <?= $current_page == 'kelola_rekening.php' ? 'active' : ''; ?>"><i class="bi bi-bank"></i> Kelola Rekening</a></li>
                 <li class="nav-item"><a href="kelola_layanan.php" class="nav-link-modern text-decoration-none <?= $current_page == 'kelola_layanan.php' ? 'active' : ''; ?>"><i class="bi bi-menu-button-wide"></i> Kelola Layanan</a></li>
                 
+                <li class="nav-item"><a href="buka_rekening.php" class="nav-link-modern text-decoration-none <?= $current_page == 'buka_rekening.php' ? 'active' : ''; ?>"><i class="bi bi-person-vcard"></i> Pendaftaran Rekening</a></li>
+
                 <li class="nav-item mt-4 mb-2"><small class="fw-bold px-3 text-uppercase" style="color: #adb5bd; font-size: 11px; letter-spacing: 1px;">Sistem Pemantauan</small></li>
                 <li class="nav-item"><a href="laporan_global.php" class="nav-link-modern text-decoration-none <?= $current_page == 'laporan_global.php' ? 'active' : ''; ?>"><i class="bi bi-file-earmark-bar-graph-fill"></i> Laporan Transaksi</a></li>
                 <li class="nav-item"><a href="laporan_toko.php" class="nav-link-modern text-decoration-none <?= $current_page == 'laporan_toko.php' ? 'active' : ''; ?>"><i class="bi bi-journal-text"></i> Rekap Setoran Toko</a></li>
@@ -58,6 +60,9 @@ $current_page = basename($_SERVER['PHP_SELF']);
                 <li class="nav-item"><a href="user_dashboard.php" class="nav-link-modern text-decoration-none <?= $current_page == 'user_dashboard.php' ? 'active' : ''; ?>"><i class="bi bi-house-door-fill"></i> Beranda</a></li>
                 <li class="nav-item"><a href="set_modal.php" class="nav-link-modern text-decoration-none <?= $current_page == 'set_modal.php' ? 'active' : ''; ?>"><i class="bi bi-wallet-fill"></i> Set Modal Laci</a></li>
                 <li class="nav-item"><a href="set_uang_receh.php" class="nav-link-modern text-decoration-none <?= $current_page == 'set_uang_receh.php' ? 'active' : ''; ?>"><i class="bi bi-cash-coin"></i> Stok Uang Receh</a></li>
+                
+                <li class="nav-item"><a href="buka_rekening.php" class="nav-link-modern text-decoration-none <?= $current_page == 'buka_rekening.php' ? 'active' : ''; ?>"><i class="bi bi-person-vcard"></i> Daftar Rekening Baru</a></li>
+
                 <li class="nav-item mt-4 mb-2"><small class="fw-bold px-3 text-uppercase" style="color: #adb5bd; font-size: 11px; letter-spacing: 1px;">Rekapitulasi</small></li>
                 <li class="nav-item"><a href="laporan.php" class="nav-link-modern text-decoration-none <?= $current_page == 'laporan.php' ? 'active' : ''; ?>"><i class="bi bi-printer-fill"></i> Cetak Laporan</a></li>
                 <li class="nav-item"><a href="riwayat.php" class="nav-link-modern text-decoration-none <?= $current_page == 'riwayat.php' ? 'active' : ''; ?>"><i class="bi bi-clock-history"></i> Riwayat Trx</a></li>

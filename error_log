@@ -186,3 +186,198 @@ Stack trace:
 [30-May-2026 12:08:29 Asia/Jakarta] PHP Warning:  Trying to access array offset on value of type null in /home/juandade/public_html/user_dashboard.php on line 105
 [30-May-2026 12:08:29 Asia/Jakarta] PHP Warning:  Trying to access array offset on value of type null in /home/juandade/public_html/user_dashboard.php on line 108
 [30-May-2026 12:08:29 Asia/Jakarta] PHP Warning:  Trying to access array offset on value of type null in /home/juandade/public_html/user_dashboard.php on line 111
+[30-May-2026 12:25:49 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri3" in /home/juandade/public_html/set_modal.php on line 63
+[30-May-2026 12:25:49 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri4" in /home/juandade/public_html/set_modal.php on line 63
+[30-May-2026 12:28:48 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri3" in /home/juandade/public_html/user_dashboard.php on line 110
+[30-May-2026 12:28:48 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri4" in /home/juandade/public_html/user_dashboard.php on line 110
+[30-May-2026 12:29:35 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri3" in /home/juandade/public_html/set_modal.php on line 63
+[30-May-2026 12:29:35 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri4" in /home/juandade/public_html/set_modal.php on line 63
+[30-May-2026 12:29:37 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri3" in /home/juandade/public_html/user_dashboard.php on line 110
+[30-May-2026 12:29:37 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri4" in /home/juandade/public_html/user_dashboard.php on line 110
+[30-May-2026 12:29:58 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri3" in /home/juandade/public_html/user_dashboard.php on line 110
+[30-May-2026 12:29:58 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri4" in /home/juandade/public_html/user_dashboard.php on line 110
+[30-May-2026 12:30:05 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri3" in /home/juandade/public_html/set_modal.php on line 63
+[30-May-2026 12:30:05 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri4" in /home/juandade/public_html/set_modal.php on line 63
+[30-May-2026 12:30:07 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri3" in /home/juandade/public_html/set_modal.php on line 63
+[30-May-2026 12:30:07 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri4" in /home/juandade/public_html/set_modal.php on line 63
+[30-May-2026 12:31:39 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri3" in /home/juandade/public_html/set_modal.php on line 90
+[30-May-2026 12:31:39 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri4" in /home/juandade/public_html/set_modal.php on line 90
+[30-May-2026 12:31:59 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri3" in /home/juandade/public_html/set_modal.php on line 90
+[30-May-2026 12:31:59 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri4" in /home/juandade/public_html/set_modal.php on line 90
+[30-May-2026 12:32:39 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri3" in /home/juandade/public_html/user_dashboard.php on line 110
+[30-May-2026 12:32:39 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri4" in /home/juandade/public_html/user_dashboard.php on line 110
+[30-May-2026 12:33:06 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri3" in /home/juandade/public_html/set_modal.php on line 90
+[30-May-2026 12:33:06 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri4" in /home/juandade/public_html/set_modal.php on line 90
+[30-May-2026 12:33:17 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri3" in /home/juandade/public_html/set_modal.php on line 90
+[30-May-2026 12:33:17 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri4" in /home/juandade/public_html/set_modal.php on line 90
+[30-May-2026 12:33:20 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri3" in /home/juandade/public_html/user_dashboard.php on line 110
+[30-May-2026 12:33:20 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri4" in /home/juandade/public_html/user_dashboard.php on line 110
+[30-May-2026 12:34:16 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri3" in /home/juandade/public_html/user_dashboard.php on line 110
+[30-May-2026 12:34:16 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri4" in /home/juandade/public_html/user_dashboard.php on line 110
+[30-May-2026 12:34:26 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri3" in /home/juandade/public_html/set_modal.php on line 90
+[30-May-2026 12:34:26 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri4" in /home/juandade/public_html/set_modal.php on line 90
+[30-May-2026 12:34:38 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri3" in /home/juandade/public_html/set_modal.php on line 90
+[30-May-2026 12:34:38 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri4" in /home/juandade/public_html/set_modal.php on line 90
+[30-May-2026 12:34:41 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri3" in /home/juandade/public_html/user_dashboard.php on line 110
+[30-May-2026 12:34:41 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri4" in /home/juandade/public_html/user_dashboard.php on line 110
+[30-May-2026 12:34:42 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri3" in /home/juandade/public_html/user_dashboard.php on line 110
+[30-May-2026 12:34:42 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri4" in /home/juandade/public_html/user_dashboard.php on line 110
+[30-May-2026 12:34:43 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri3" in /home/juandade/public_html/user_dashboard.php on line 110
+[30-May-2026 12:34:43 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri4" in /home/juandade/public_html/user_dashboard.php on line 110
+[30-May-2026 12:35:08 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri3" in /home/juandade/public_html/user_dashboard.php on line 110
+[30-May-2026 12:35:08 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri4" in /home/juandade/public_html/user_dashboard.php on line 110
+[30-May-2026 12:35:19 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri3" in /home/juandade/public_html/set_modal.php on line 90
+[30-May-2026 12:35:19 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri4" in /home/juandade/public_html/set_modal.php on line 90
+[30-May-2026 12:36:04 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri3" in /home/juandade/public_html/user_dashboard.php on line 110
+[30-May-2026 12:36:04 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri4" in /home/juandade/public_html/user_dashboard.php on line 110
+[30-May-2026 12:36:06 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri3" in /home/juandade/public_html/set_modal.php on line 99
+[30-May-2026 12:36:06 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri4" in /home/juandade/public_html/set_modal.php on line 99
+[30-May-2026 12:36:19 Asia/Jakarta] PHP Fatal error:  Uncaught mysqli_sql_exception: Unknown column 'modal_bri3' in 'SET' in /home/juandade/public_html/set_modal.php:70
+Stack trace:
+#0 /home/juandade/public_html/set_modal.php(70): mysqli->query()
+#1 {main}
+  thrown in /home/juandade/public_html/set_modal.php on line 70
+[30-May-2026 12:36:49 Asia/Jakarta] PHP Fatal error:  Uncaught mysqli_sql_exception: Unknown column 'modal_bri3' in 'SET' in /home/juandade/public_html/set_modal.php:70
+Stack trace:
+#0 /home/juandade/public_html/set_modal.php(70): mysqli->query()
+#1 {main}
+  thrown in /home/juandade/public_html/set_modal.php on line 70
+[30-May-2026 12:36:51 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri3" in /home/juandade/public_html/user_dashboard.php on line 110
+[30-May-2026 12:36:51 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri4" in /home/juandade/public_html/user_dashboard.php on line 110
+[30-May-2026 12:40:13 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri3" in /home/juandade/public_html/user_dashboard.php on line 100
+[30-May-2026 12:40:13 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri4" in /home/juandade/public_html/user_dashboard.php on line 100
+[30-May-2026 12:40:21 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri3" in /home/juandade/public_html/set_modal.php on line 87
+[30-May-2026 12:40:21 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri4" in /home/juandade/public_html/set_modal.php on line 87
+[30-May-2026 12:40:36 Asia/Jakarta] PHP Fatal error:  Uncaught mysqli_sql_exception: Unknown column 'modal_bri3' in 'SET' in /home/juandade/public_html/set_modal.php:61
+Stack trace:
+#0 /home/juandade/public_html/set_modal.php(61): mysqli->query()
+#1 {main}
+  thrown in /home/juandade/public_html/set_modal.php on line 61
+[30-May-2026 12:41:53 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri3" in /home/juandade/public_html/set_modal.php on line 87
+[30-May-2026 12:41:53 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri4" in /home/juandade/public_html/set_modal.php on line 87
+[30-May-2026 12:42:01 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri3" in /home/juandade/public_html/set_modal.php on line 87
+[30-May-2026 12:42:01 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri4" in /home/juandade/public_html/set_modal.php on line 87
+[30-May-2026 12:44:31 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri3" in /home/juandade/public_html/set_modal.php on line 87
+[30-May-2026 12:44:31 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri4" in /home/juandade/public_html/set_modal.php on line 87
+[30-May-2026 12:44:33 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri3" in /home/juandade/public_html/set_modal.php on line 87
+[30-May-2026 12:44:33 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri4" in /home/juandade/public_html/set_modal.php on line 87
+[30-May-2026 12:44:35 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri3" in /home/juandade/public_html/set_modal.php on line 87
+[30-May-2026 12:44:35 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri4" in /home/juandade/public_html/set_modal.php on line 87
+[30-May-2026 12:44:39 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri3" in /home/juandade/public_html/user_dashboard.php on line 100
+[30-May-2026 12:44:39 Asia/Jakarta] PHP Warning:  Undefined array key "modal_bri4" in /home/juandade/public_html/user_dashboard.php on line 100
+[31-May-2026 17:28:39 Asia/Jakarta] PHP Fatal error:  Uncaught mysqli_sql_exception: Unknown column 'pemilik' in 'ORDER BY' in /home/juandade/public_html/kelola_rekening.php:39
+Stack trace:
+#0 /home/juandade/public_html/kelola_rekening.php(39): mysqli->query()
+#1 {main}
+  thrown in /home/juandade/public_html/kelola_rekening.php on line 39
+[31-May-2026 17:28:41 Asia/Jakarta] PHP Fatal error:  Uncaught mysqli_sql_exception: Unknown column 'pemilik' in 'ORDER BY' in /home/juandade/public_html/kelola_rekening.php:39
+Stack trace:
+#0 /home/juandade/public_html/kelola_rekening.php(39): mysqli->query()
+#1 {main}
+  thrown in /home/juandade/public_html/kelola_rekening.php on line 39
+[31-May-2026 17:28:41 Asia/Jakarta] PHP Fatal error:  Uncaught mysqli_sql_exception: Unknown column 'pemilik' in 'ORDER BY' in /home/juandade/public_html/kelola_rekening.php:39
+Stack trace:
+#0 /home/juandade/public_html/kelola_rekening.php(39): mysqli->query()
+#1 {main}
+  thrown in /home/juandade/public_html/kelola_rekening.php on line 39
+[31-May-2026 17:29:20 Asia/Jakarta] PHP Fatal error:  Uncaught mysqli_sql_exception: Unknown column 'pemilik' in 'ORDER BY' in /home/juandade/public_html/kelola_rekening.php:39
+Stack trace:
+#0 /home/juandade/public_html/kelola_rekening.php(39): mysqli->query()
+#1 {main}
+  thrown in /home/juandade/public_html/kelola_rekening.php on line 39
+[31-May-2026 17:31:27 Asia/Jakarta] PHP Fatal error:  Uncaught mysqli_sql_exception: Unknown column 'pemilik' in 'ORDER BY' in /home/juandade/public_html/kelola_rekening.php:50
+Stack trace:
+#0 /home/juandade/public_html/kelola_rekening.php(50): mysqli->query()
+#1 {main}
+  thrown in /home/juandade/public_html/kelola_rekening.php on line 50
+[31-May-2026 17:31:37 Asia/Jakarta] PHP Fatal error:  Uncaught mysqli_sql_exception: Unknown column 'pemilik' in 'ORDER BY' in /home/juandade/public_html/kelola_rekening.php:50
+Stack trace:
+#0 /home/juandade/public_html/kelola_rekening.php(50): mysqli->query()
+#1 {main}
+  thrown in /home/juandade/public_html/kelola_rekening.php on line 50
+[31-May-2026 15:26:02 UTC] PHP Fatal error:  Uncaught mysqli_sql_exception: No such file or directory in /home/juandade/public_html/config.php:9
+Stack trace:
+#0 /home/juandade/public_html/config.php(9): mysqli->__construct()
+#1 /home/juandade/public_html/set_modal.php(2): require('/home/juandade/...')
+#2 {main}
+  thrown in /home/juandade/public_html/config.php on line 9
+[31-May-2026 15:26:03 UTC] PHP Fatal error:  Uncaught mysqli_sql_exception: No such file or directory in /home/juandade/public_html/config.php:9
+Stack trace:
+#0 /home/juandade/public_html/config.php(9): mysqli->__construct()
+#1 /home/juandade/public_html/set_modal.php(2): require('/home/juandade/...')
+#2 {main}
+  thrown in /home/juandade/public_html/config.php on line 9
+[01-Jun-2026 09:42:29 Asia/Jakarta] PHP Fatal error:  Uncaught mysqli_sql_exception: Column 'modal_bos2bri1' specified twice in /home/juandade/public_html/set_modal.php:58
+Stack trace:
+#0 /home/juandade/public_html/set_modal.php(58): mysqli->query()
+#1 {main}
+  thrown in /home/juandade/public_html/set_modal.php on line 58
+[01-Jun-2026 09:54:20 Asia/Jakarta] PHP Fatal error:  Uncaught mysqli_sql_exception: Column 'modal_bos2bri1' specified twice in /home/juandade/public_html/set_modal.php:58
+Stack trace:
+#0 /home/juandade/public_html/set_modal.php(58): mysqli->query()
+#1 {main}
+  thrown in /home/juandade/public_html/set_modal.php on line 58
+[01-Jun-2026 09:57:51 Asia/Jakarta] PHP Fatal error:  Uncaught mysqli_sql_exception: Column 'modal_bos2bri1' specified twice in /home/juandade/public_html/set_modal.php:60
+Stack trace:
+#0 /home/juandade/public_html/set_modal.php(60): mysqli->query()
+#1 {main}
+  thrown in /home/juandade/public_html/set_modal.php on line 60
+[01-Jun-2026 09:57:52 Asia/Jakarta] PHP Fatal error:  Uncaught mysqli_sql_exception: Column 'modal_bos2bri1' specified twice in /home/juandade/public_html/set_modal.php:60
+Stack trace:
+#0 /home/juandade/public_html/set_modal.php(60): mysqli->query()
+#1 {main}
+  thrown in /home/juandade/public_html/set_modal.php on line 60
+[01-Jun-2026 09:58:12 Asia/Jakarta] PHP Fatal error:  Uncaught mysqli_sql_exception: Column 'modal_bos2bri1' specified twice in /home/juandade/public_html/set_modal.php:60
+Stack trace:
+#0 /home/juandade/public_html/set_modal.php(60): mysqli->query()
+#1 {main}
+  thrown in /home/juandade/public_html/set_modal.php on line 60
+[01-Jun-2026 09:58:40 Asia/Jakarta] PHP Fatal error:  Uncaught mysqli_sql_exception: Column 'modal_bos2bri1' specified twice in /home/juandade/public_html/set_modal.php:60
+Stack trace:
+#0 /home/juandade/public_html/set_modal.php(60): mysqli->query()
+#1 {main}
+  thrown in /home/juandade/public_html/set_modal.php on line 60
+[01-Jun-2026 10:31:51 Asia/Jakarta] PHP Fatal error:  Uncaught mysqli_sql_exception: Unknown column 'password' in 'INSERT INTO' in /home/juandade/public_html/kelola_user.php:23
+Stack trace:
+#0 /home/juandade/public_html/kelola_user.php(23): mysqli->query()
+#1 {main}
+  thrown in /home/juandade/public_html/kelola_user.php on line 23
+[01-Jun-2026 10:34:52 Asia/Jakarta] PHP Fatal error:  Uncaught mysqli_sql_exception: Unknown column 'password' in 'INSERT INTO' in /home/juandade/public_html/kelola_user.php:26
+Stack trace:
+#0 /home/juandade/public_html/kelola_user.php(26): mysqli->query()
+#1 {main}
+  thrown in /home/juandade/public_html/kelola_user.php on line 26
+[01-Jun-2026 11:15:42 Asia/Jakarta] PHP Fatal error:  Uncaught mysqli_sql_exception: Table 'juandade_db_brilink.laporan_toko' doesn't exist in /home/juandade/public_html/laporan_toko.php:16
+Stack trace:
+#0 /home/juandade/public_html/laporan_toko.php(16): mysqli->query()
+#1 {main}
+  thrown in /home/juandade/public_html/laporan_toko.php on line 16
+[05-Jun-2026 20:11:01 Asia/Jakarta] PHP Warning:  Undefined array key "waktu" in /home/juandade/public_html/user_dashboard.php on line 205
+[05-Jun-2026 20:11:01 Asia/Jakarta] PHP Warning:  Undefined array key "waktu" in /home/juandade/public_html/user_dashboard.php on line 205
+[05-Jun-2026 20:11:01 Asia/Jakarta] PHP Warning:  Undefined array key "waktu" in /home/juandade/public_html/user_dashboard.php on line 205
+[05-Jun-2026 20:11:01 Asia/Jakarta] PHP Warning:  Undefined array key "waktu" in /home/juandade/public_html/user_dashboard.php on line 205
+[05-Jun-2026 20:11:01 Asia/Jakarta] PHP Warning:  Undefined array key "waktu" in /home/juandade/public_html/user_dashboard.php on line 205
+[05-Jun-2026 20:11:01 Asia/Jakarta] PHP Warning:  Undefined array key "waktu" in /home/juandade/public_html/user_dashboard.php on line 205
+[05-Jun-2026 20:11:01 Asia/Jakarta] PHP Warning:  Undefined array key "waktu" in /home/juandade/public_html/user_dashboard.php on line 205
+[05-Jun-2026 20:11:03 Asia/Jakarta] PHP Warning:  Undefined array key "waktu" in /home/juandade/public_html/user_dashboard.php on line 205
+[05-Jun-2026 20:11:03 Asia/Jakarta] PHP Warning:  Undefined array key "waktu" in /home/juandade/public_html/user_dashboard.php on line 205
+[05-Jun-2026 20:11:03 Asia/Jakarta] PHP Warning:  Undefined array key "waktu" in /home/juandade/public_html/user_dashboard.php on line 205
+[05-Jun-2026 20:11:03 Asia/Jakarta] PHP Warning:  Undefined array key "waktu" in /home/juandade/public_html/user_dashboard.php on line 205
+[05-Jun-2026 20:11:03 Asia/Jakarta] PHP Warning:  Undefined array key "waktu" in /home/juandade/public_html/user_dashboard.php on line 205
+[05-Jun-2026 20:11:03 Asia/Jakarta] PHP Warning:  Undefined array key "waktu" in /home/juandade/public_html/user_dashboard.php on line 205
+[05-Jun-2026 20:11:03 Asia/Jakarta] PHP Warning:  Undefined array key "waktu" in /home/juandade/public_html/user_dashboard.php on line 205
+[05-Jun-2026 20:18:38 Asia/Jakarta] PHP Fatal error:  Uncaught mysqli_sql_exception: Unknown column 'waktu' in 'INSERT INTO' in /home/juandade/public_html/user_dashboard.php:87
+Stack trace:
+#0 /home/juandade/public_html/user_dashboard.php(87): mysqli->query()
+#1 {main}
+  thrown in /home/juandade/public_html/user_dashboard.php on line 87
+[05-Jun-2026 20:24:46 Asia/Jakarta] PHP Fatal error:  Uncaught mysqli_sql_exception: Unknown column 'waktu' in 'INSERT INTO' in /home/juandade/public_html/user_dashboard.php:85
+Stack trace:
+#0 /home/juandade/public_html/user_dashboard.php(85): mysqli->query()
+#1 {main}
+  thrown in /home/juandade/public_html/user_dashboard.php on line 85
+[05-Jun-2026 20:25:21 Asia/Jakarta] PHP Fatal error:  Uncaught mysqli_sql_exception: Unknown column 'waktu' in 'INSERT INTO' in /home/juandade/public_html/user_dashboard.php:85
+Stack trace:
+#0 /home/juandade/public_html/user_dashboard.php(85): mysqli->query()
+#1 {main}
+  thrown in /home/juandade/public_html/user_dashboard.php on line 85

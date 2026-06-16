@@ -18,20 +18,27 @@ $conn->query("CREATE TABLE IF NOT EXISTS laporan_toko (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )");
 
-// Auto-Fix Kolom Jenis Toko (Mencegah Error 500)
+// Auto-Fix Kolom Jenis Toko
 $check_jenis = $conn->query("SHOW COLUMNS FROM cabang LIKE 'jenis'");
 if ($check_jenis && $check_jenis->num_rows == 0) {
     $conn->query("ALTER TABLE cabang ADD jenis VARCHAR(50) NOT NULL DEFAULT 'BRILink'");
 }
 
 $q_user = $conn->query("SELECT cabang_id FROM users WHERE id = '$user_id'");
-$user_info = $q_user ? $q_user->fetch_assoc() : [];
-$default_cabang_id = !empty($user_info['cabang_id']) ? $user_info['cabang_id'] : 0;
+$row_user = $q_user ? $q_user->fetch_assoc() : null;
+$default_cabang_id = ($row_user && !empty($row_user['cabang_id'])) ? $row_user['cabang_id'] : 0;
 $shift_default = isset($_SESSION['shift_ke']) ? $_SESSION['shift_ke'] : 1;
 
 if (isset($_POST['simpan_laporan'])) {
+    // Perbaikan validasi select cabang_id
+    $cabang_input = isset($_POST['cabang_id']) ? (int)$_POST['cabang_id'] : 0;
+    
+    if ($cabang_input == 0) {
+        $_SESSION['flash_error'] = "Lokasi Asal (Nama Toko) belum dipilih!";
+        header("Location: input_laporan_toko.php"); exit;
+    }
+
     $tanggal_input  = $conn->real_escape_string($_POST['tanggal']);
-    $cabang_input   = (int)$_POST['cabang_id'];
     $shift_input    = (int)$_POST['shift_ke'];
     $nama_penyetor  = $conn->real_escape_string(trim($_POST['nama_penyetor']));
     $jumlah_setoran = (float)str_replace('.', '', $_POST['jumlah_setoran']);
@@ -97,7 +104,7 @@ if (isset($_POST['simpan_laporan'])) {
                         </div>
                         <div class="mb-3">
                             <label class="form-label text-muted small fw-bold text-uppercase">2. Nama Lokasi Asal</label>
-                            <select name="cabang_id" id="dropdownLokasi" class="form-select" required disabled>
+                            <select name="cabang_id" id="dropdownLokasi" class="form-select" required>
                                 <option value="" disabled selected>-- Pilih Kategori Dahulu --</option>
                             </select>
                         </div>
@@ -173,7 +180,8 @@ if (isset($_POST['simpan_laporan'])) {
                                                 '<?= htmlspecialchars(addslashes($r['nama_cabang'])) ?>', 
                                                 '<?= htmlspecialchars(addslashes($r['nama_penyetor'])) ?>', 
                                                 '<?= number_format($r['jumlah_setoran'], 0, ',', '.') ?>',
-                                                '<?= $r['shift_ke'] ?>'
+                                                '<?= $r['shift_ke'] ?>',
+                                                '<?= htmlspecialchars(addslashes($_SESSION['username'])) ?>'
                                             )">
                                             <i class="bi bi-printer-fill me-1"></i> Cetak NCR
                                         </button>
@@ -220,11 +228,8 @@ if (isset($_POST['simpan_laporan'])) {
                 }
             });
             
-            dropdownLokasi.disabled = false;
-            
             if (count === 0) {
                 dropdownLokasi.innerHTML = '<option value="" disabled selected>-- Belum ada data di kategori ini --</option>';
-                dropdownLokasi.disabled = true;
             }
         });
 
@@ -245,7 +250,7 @@ if (isset($_POST['simpan_laporan'])) {
             style.innerHTML = styleRule;
         }
 
-        function cetakBuktiSetoran(id, tanggal, toko, penyetor, jumlah, shift) {
+        function cetakBuktiSetoran(id, tanggal, toko, penyetor, jumlah, shift, penerima) {
             setPrintPageStyle('@page { size: A5 landscape; margin: 15mm; }');
             
             let htmlPrint = `
@@ -265,9 +270,11 @@ if (isset($_POST['simpan_laporan'])) {
                     .ncr-table { width: 100%; border-collapse: collapse; margin-bottom: 15px; font-family: 'Arial', sans-serif; }
                     .ncr-table th, .ncr-table td { border: 1px solid #000; padding: 10px; }
                     .ncr-table th { text-align: center; font-weight: bold; background-color: #f0f0f0 !important; -webkit-print-color-adjust: exact; }
-                    .ncr-ttd { display: flex; justify-content: space-between; margin-top: 20px; text-align: center; font-size: 13px; font-family: 'Arial', sans-serif; }
-                    .ttd-box { width: 35%; }
-                    .ttd-name { border-bottom: 1px solid #000; margin-top: 60px; font-weight: bold; display: block; padding-bottom: 3px; }
+                    
+                    /* FORMAT 4 TTD BARU */
+                    .sign-grid { display: flex; justify-content: space-between; text-align: center; margin-top: 40px; font-size: 12px; font-family: 'Arial', sans-serif; }
+                    .sign-col { width: 22%; display: flex; flex-direction: column; justify-content: space-between; }
+                    .sign-line { border-bottom: 1px solid #000; margin-top: 60px; font-weight: bold; padding-bottom: 3px; display: block; }
                 </style>
                 
                 <div class="ncr-header">
@@ -321,17 +328,11 @@ if (isset($_POST['simpan_laporan'])) {
                     </tfoot>
                 </table>
 
-                <div class="ncr-ttd">
-                    <div class="ttd-box">
-                        <span>Diserahkan Oleh,</span>
-                        <span class="ttd-name">${penyetor}</span>
-                        <span style="font-size: 11px;">Kasir Bertugas</span>
-                    </div>
-                    <div class="ttd-box">
-                        <span>Diterima Oleh,</span>
-                        <span class="ttd-name">&nbsp;</span>
-                        <span style="font-size: 11px;">Pimpinan / Admin Pusat</span>
-                    </div>
+                <div class="sign-grid">
+                    <div class="sign-col"><span>Disetor Oleh (Toko),</span><span class="sign-line">${penyetor}</span></div>
+                    <div class="sign-col"><span>Diterima Oleh (Agen),</span><span class="sign-line">${penerima}</span></div>
+                    <div class="sign-col"><span>Manajer,</span><span class="sign-line">(..........................)</span></div>
+                    <div class="sign-col"><span>Bos / Pimpinan,</span><span class="sign-line">(..........................)</span></div>
                 </div>
             `;
 

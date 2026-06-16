@@ -19,19 +19,24 @@ if ($check_jenis && $check_jenis->num_rows == 0) {
     $conn->query("ALTER TABLE cabang ADD jenis VARCHAR(50) NOT NULL DEFAULT 'BRILink'");
 }
 
-$filter_tgl_mulai = isset($_GET['tgl_mulai']) ? $_GET['tgl_mulai'] : date('Y-m-01');
-$filter_tgl_sampai = isset($_GET['tgl_sampai']) ? $_GET['tgl_sampai'] : date('Y-m-d');
-$filter_cabang = isset($_GET['cabang']) ? $_GET['cabang'] : 'semua';
-$filter_penyetor = isset($_GET['penyetor']) ? $conn->real_escape_string($_GET['penyetor']) : '';
+// Perbaikan validasi penarikan param GET agar aman dari string kosong ('')
+$filter_tgl_mulai = !empty($_GET['tgl_mulai']) ? $_GET['tgl_mulai'] : date('Y-m-01');
+$filter_tgl_sampai = !empty($_GET['tgl_sampai']) ? $_GET['tgl_sampai'] : date('Y-m-d');
+$filter_cabang = !empty($_GET['cabang']) ? $_GET['cabang'] : 'semua';
+$filter_penyetor = !empty($_GET['penyetor']) ? $conn->real_escape_string($_GET['penyetor']) : '';
 
 $where = "l.tanggal BETWEEN '$filter_tgl_mulai' AND '$filter_tgl_sampai' AND c.jenis = 'Toko'";
 $nama_toko_filter = "Semua Toko";
 
 if ($filter_cabang !== 'semua') {
-    $where .= " AND l.cabang_id = '$filter_cabang'";
-    $q_nama_cab = $conn->query("SELECT nama_cabang FROM cabang WHERE id = '$filter_cabang'");
-    if($q_nama_cab && $q_nama_cab->num_rows > 0) {
-        $nama_toko_filter = $q_nama_cab->fetch_assoc()['nama_cabang'];
+    $cabang_id_aman = $conn->real_escape_string($filter_cabang);
+    $where .= " AND l.cabang_id = '$cabang_id_aman'";
+    
+    // Perbaikan offset array null saat fetch
+    $q_nama_cab = $conn->query("SELECT nama_cabang FROM cabang WHERE id = '$cabang_id_aman'");
+    $row_cab = $q_nama_cab ? $q_nama_cab->fetch_assoc() : null;
+    if($row_cab && !empty($row_cab['nama_cabang'])) {
+        $nama_toko_filter = $row_cab['nama_cabang'];
     }
 }
 
