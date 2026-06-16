@@ -821,6 +821,7 @@ for ($i = 6; $i >= 0; $i--) {
                 .sign-line { border-bottom: 1px solid #000; margin-top: 60px; font-weight: bold; padding-bottom: 3px; display: block; }
             </style>
             <div class="hdr-bos">
+                <img src="assets/img/logo-katanyang.png" style="max-height: 50px; filter: grayscale(100%); margin-bottom: 8px; display: block; margin: 0 auto 8px auto;">
                 <h2>BUKTI SETORAN DANA BOS</h2>
                 <p>INJEKSI PENAMBAHAN MODAL SHIFT KASIR</p>
             </div>

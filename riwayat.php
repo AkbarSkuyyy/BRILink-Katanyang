@@ -1,4 +1,5 @@
 <?php
+mysqli_report(MYSQLI_REPORT_OFF);
 require 'config.php';
 if (session_status() == PHP_SESSION_NONE) { session_start(); }
 if (!isset($_SESSION['role']) || $_SESSION['role'] != 'user') { header("Location: index.php"); exit; }
@@ -45,8 +46,6 @@ if (isset($_POST['batal_transaksi'])) {
                 
             if ($update) {
                 $_SESSION['flash_success'] = "Transaksi berhasil dibatalkan dan nominal telah dikoreksi.";
-                // Catat Log Keamanan
-                catatLog($conn, "Membatalkan Transaksi ID: $id_trx (Rp $old_nom). Alasan: $alasan");
             }
         }
     }
@@ -123,10 +122,14 @@ function build_url($page_num) {
         #nota-print-area { display: none; }
         @media (max-width: 767.98px) { .main-content { margin-left: 0; padding: 80px 15px 20px 15px; } }
         
+        /* CSS CETAK ANTI-ERROR UNTUK PC & HP (Epson LX-310 Compatible) */
         @media print {
-            body.printing-struk #nota-print-area { display: block !important; width: 100%; color: #000; }
-            body.printing-struk .sidebar-modern, body.printing-struk .mobile-header, body.printing-struk .main-content { display: none !important; }
-            body { background: white !important; margin: 0; padding: 0; }
+            body { background-color: white !important; margin: 0 !important; padding: 0 !important; }
+            body > :not(#nota-print-area) { display: none !important; }
+            .sidebar-modern, .mobile-header, .main-content { display: none !important; }
+            
+            body.printing-struk #nota-print-area { display: block !important; width: 100%; margin:0; padding:0; }
+            * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
         }
     </style>
 </head>
@@ -257,7 +260,7 @@ function build_url($page_num) {
 
             <div class="d-md-none">
                 <?php 
-                $q_riwayat->data_seek(0); // Reset pointer query
+                $q_riwayat->data_seek(0);
                 if ($q_riwayat && $q_riwayat->num_rows > 0):
                     while ($row = $q_riwayat->fetch_assoc()): 
                         $is_batal = ($row['status'] == 'batal');
@@ -324,7 +327,6 @@ function build_url($page_num) {
                         <a class="page-link" href="<?= build_url($page - 1) ?>"><i class="bi bi-chevron-left"></i> Prev</a>
                     </li>
                     <?php 
-                    // Logika untuk menampilkan maksimal 5 nomor halaman
                     $start_page = max(1, $page - 2);
                     $end_page = min($total_pages, $page + 2);
                     for ($i = $start_page; $i <= $end_page; $i++): 
@@ -352,109 +354,150 @@ function build_url($page_num) {
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // PENGATURAN CETAK (Gabungan dari Laporan dan Dashboard)
         function setPrintPageStyle(styleRule) {
             let style = document.getElementById('dynamic-print-style');
             if (!style) { style = document.createElement('style'); style.id = 'dynamic-print-style'; document.head.appendChild(style); }
             style.innerHTML = styleRule;
         }
 
-        // CETAK NOTA UMUM
+        // =======================================================
+        // 1. FUNGSI CETAK TIKET/NOTA TRANSAKSI (LOGO + CHECKLIST)
+        // Didesain Menggunakan Struktur Tabel Murni agar Aman di HP dan Dot Matrix
+        // =======================================================
         function cetakNotaTiket(kode_nota, jenis, nominal, admin) {
-            setPrintPageStyle('@page { size: 210mm 90mm; margin: 5mm; }');
-            let cekTarik = jenis.toLowerCase().includes('tarik') ? '☑' : '☐';
-            let cekTransfer = (jenis.toLowerCase().includes('transfer') || jenis.toLowerCase().includes('setor')) ? '☑' : '☐';
-            let cekBayar = (jenis.toLowerCase().includes('bayar') || jenis.toLowerCase().includes('angsuran') || jenis.toLowerCase().includes('pulsa') || jenis.toLowerCase().includes('token')) ? '☑' : '☐';
+            // Matikan margin bawaan browser agar kertas dihitung murni 5.5 inci (Half Letter)
+            setPrintPageStyle('@page { size: 8.5in 5.5in; margin: 0; }');
+            
+            let j = jenis.toLowerCase();
+            
+            // Logika Checklist Cerdas
+            let c_tarik = (j.includes('tarik')) ? '☑' : '☐';
+            let c_setor = (j.includes('setor') && !j.includes('bos')) ? '☑' : '☐';
+            let c_tf    = (j.includes('transfer')) ? '☑' : '☐';
+            let c_topup = (j.includes('topup') || j.includes('e-wallet')) ? '☑' : '☐';
+            let c_pulsa = (j.includes('pulsa') || j.includes('token') || j.includes('data') || j.includes('listrik')) ? '☑' : '☐';
+            let c_bayar = (j.includes('pdam') || j.includes('cicilan') || j.includes('bayar') || j.includes('finance')) ? '☑' : '☐';
+            let c_buka  = (j.includes('buka') || j.includes('rekening')) ? '☑' : '☐';
+            let c_receh = (j.includes('receh') || j.includes('tukar')) ? '☑' : '☐';
+            
+            let c_lain = (c_tarik==='☐' && c_setor==='☐' && c_tf==='☐' && c_topup==='☐' && c_pulsa==='☐' && c_bayar==='☐' && c_buka==='☐' && c_receh==='☐') ? '☑' : '☐';
+
             let tglWaktu = new Date().toLocaleString('id-ID');
 
             let notaContent = `
-                <style>
-                    #nota-print-area { font-family: Arial, sans-serif; font-size: 11px; line-height: 1.3; color: #000; width: 100%; max-width: 200mm; height: 80mm; margin: auto; position: relative; border: 2px solid #000; border-radius: 10px; background-color: #fff; display: flex; overflow: hidden; box-sizing: border-box; }
-                    .ticket-main { flex: 3; padding: 10px 15px; border-right: 2px dashed #000; display: flex; flex-direction: column; justify-content: space-between; }
-                    .ticket-stub { flex: 1; padding: 10px; background-color: #f9f9f9; display: flex; flex-direction: column; justify-content: space-between; }
-                    .header-main { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #000; padding-bottom: 5px; margin-bottom: 5px; }
-                    .logo-box img { max-height: 30px; object-fit: contain; }
-                    .title-main { text-align: right; }
-                    .title-main strong { font-size: 16px; color: #00529C; letter-spacing: 1px; text-transform: uppercase;}
-                    .sub-title { font-size: 9px; display: block; color: #555;}
-                    .checkbox-group { display: flex; gap: 15px; margin-bottom: 5px; font-weight: bold; font-size: 11px; background: #e0e0e0; padding: 3px 10px; border-radius: 5px; width: max-content;}
-                    .form-grid { display: flex; gap: 15px; }
-                    .form-col { flex: 1; }
-                    .form-group { display: flex; align-items: flex-end; margin-bottom: 3px; }
-                    .label { width: 90px; font-weight: bold; font-size: 10px; color: #333;}
-                    .titik-dua { width: 10px; text-align: center; }
-                    .garis-bawah { flex: 1; border-bottom: 1px dotted #000; padding-left: 5px; min-height: 14px; font-size: 11px; }
-                    .total-amount { font-size: 13px; font-weight: bold; }
-                    .stub-title { font-weight: bold; font-size: 12px; text-align: center; border-bottom: 2px solid #000; padding-bottom: 5px; margin-bottom: 5px; color: #00529C;}
-                    .stub-info { font-size: 10px; margin-bottom: 3px; }
-                    .ttd-section { display: flex; justify-content: space-between; margin-top: 15px; text-align: center; font-size: 9px;}
-                    .ttd-box { width: 45%; }
-                    .garis-ttd { border-bottom: 1px solid #000; margin-top: 25px; width: 100%; display: block; }
-                </style>
-                <div class="ticket-main">
-                    <div class="header-main">
-                        <div class="logo-box"><img src="assets/img/logo-katanyang.png" alt="Logo"></div>
-                        <div class="title-main"><strong>BUKTI TRANSAKSI</strong><span class="sub-title">Jln. Poros Desa Katayang Kab.Seruyan</span></div>
+                <div style="width: 8in; height: 5in; font-family: Arial, sans-serif; color: #000; border: 3px solid #000; padding: 15px; box-sizing: border-box; background: #fff; margin: 0.2in auto; border-radius: 8px; position: relative; overflow: hidden; page-break-after: avoid;">
+                    
+                    <table width="100%" border="0" cellpadding="0" cellspacing="0" style="border-bottom: 2px solid #000; padding-bottom: 5px; margin-bottom: 10px;">
+                        <tr>
+                            <td width="60%">
+                                <div style="display:flex; align-items:center; gap:10px;">
+                                    <img src="assets/img/logo-katanyang.png" style="max-height: 35px; filter: grayscale(100%);">
+                                    <h2 style="margin:0; font-size:22px; font-weight:900;">AGEN BRILINK</h2>
+                                </div>
+                            </td>
+                            <td align="right" width="40%" valign="bottom">
+                                <strong style="font-size:16px;">BUKTI TRANSAKSI / TANDA TERIMA</strong><br>
+                                <span style="font-size:11px;">Jln. Poros Desa Katayang</span>
+                            </td>
+                        </tr>
+                    </table>
+
+                    <table width="100%" border="1" cellpadding="5" cellspacing="0" style="font-size:11px; margin-bottom:12px; border-collapse: collapse; border: 1px solid #000; font-weight: bold;">
+                        <tr>
+                            <td width="33%">${c_tarik} Tarik Tunai</td>
+                            <td width="33%">${c_setor} Setor Tunai</td>
+                            <td width="34%">${c_tf} Transfer Dana</td>
+                        </tr>
+                        <tr>
+                            <td>${c_topup} TopUp / E-Wallet</td>
+                            <td>${c_pulsa} Pulsa / Token</td>
+                            <td>${c_bayar} Tagihan / Cicilan</td>
+                        </tr>
+                        <tr>
+                            <td>${c_buka} Buka Rekening</td>
+                            <td>${c_receh} Tukar Receh</td>
+                            <td>${c_lain} Transaksi Lainnya</td>
+                        </tr>
+                    </table>
+
+                    <table width="100%" border="0" cellpadding="4" cellspacing="0" style="font-size:13px;">
+                        <tr>
+                            <td width="15%"><strong>Kode Ref</strong></td><td width="2%">:</td><td width="33%" style="border-bottom:1px dotted #000;"><strong>${kode_nota}</strong></td>
+                            <td width="15%"><strong>Penerima</strong></td><td width="2%">:</td><td width="33%" style="border-bottom:1px dotted #000;"></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Waktu</strong></td><td>:</td><td style="border-bottom:1px dotted #000;">${tglWaktu}</td>
+                            <td><strong>No.Rek/ID</strong></td><td>:</td><td style="border-bottom:1px dotted #000;"></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Penyetor</strong></td><td>:</td><td style="border-bottom:1px dotted #000;"></td>
+                            <td><strong>Nominal</strong></td><td>:</td><td style="border-bottom:1px dotted #000; font-size:14px;"><strong>Rp ${nominal}</strong></td>
+                        </tr>
+                        <tr>
+                            <td><strong>No. Telp</strong></td><td>:</td><td style="border-bottom:1px dotted #000;"></td>
+                            <td><strong>Admin</strong></td><td>:</td><td style="border-bottom:1px dotted #000;">Rp ${admin}</td>
+                        </tr>
+                    </table>
+
+                    <table width="100%" style="margin-top: 20px; text-align:center; font-size:12px; font-weight: bold;">
+                        <tr>
+                            <td width="40%">Nasabah / Penyetor<br><br><br>( ...................................... )</td>
+                            <td width="20%"></td>
+                            <td width="40%">Petugas Kasir<br><br><br>( ...................................... )</td>
+                        </tr>
+                    </table>
+                    
+                    <div style="position: absolute; bottom: 5px; left: 0; width: 100%; text-align: center; font-size: 10px; font-style: italic;">
+                        * Simpan struk ini sebagai bukti transaksi yang sah. Terima Kasih *
                     </div>
-                    <div class="checkbox-group"><span>${cekTarik} Tarik Tunai</span><span>${cekTransfer} Transfer</span><span>${cekBayar} Pembayaran</span></div>
-                    <div class="form-grid">
-                        <div class="form-col">
-                            <div class="form-group"><div class="label">Kode Ref</div><div class="titik-dua">:</div><div class="garis-bawah"><strong>${kode_nota}</strong></div></div>
-                            <div class="form-group"><div class="label">Waktu</div><div class="titik-dua">:</div><div class="garis-bawah">${tglWaktu}</div></div>
-                            <div class="form-group"><div class="label">Penyetor</div><div class="titik-dua">:</div><div class="garis-bawah"></div></div>
-                            <div class="form-group"><div class="label">No. Telp</div><div class="titik-dua">:</div><div class="garis-bawah"></div></div>
-                        </div>
-                        <div class="form-col">
-                            <div class="form-group"><div class="label">Penerima</div><div class="titik-dua">:</div><div class="garis-bawah"></div></div>
-                            <div class="form-group"><div class="label">No. Rek/Id</div><div class="titik-dua">:</div><div class="garis-bawah"></div></div>
-                            <div class="form-group"><div class="label">Nominal</div><div class="titik-dua">:</div><div class="garis-bawah"><span class="total-amount">Rp ${nominal}</span></div></div>
-                            <div class="form-group"><div class="label">Biaya Admin</div><div class="titik-dua">:</div><div class="garis-bawah">Rp ${admin}</div></div>
-                        </div>
-                    </div>
-                </div>
-                <div class="ticket-stub">
-                    <div class="stub-title">TANDA TERIMA</div>
-                    <div><div class="stub-info"><strong>Ref:</strong><br>${kode_nota}</div><div class="stub-info"><strong>Nominal:</strong><br>Rp ${nominal}</div></div>
-                    <div class="ttd-section"><div class="ttd-box">Petugas<span class="garis-ttd"></span></div><div class="ttd-box">Nasabah<span class="garis-ttd"></span></div></div>
                 </div>
             `;
             let printArea = document.getElementById('nota-print-area');
             printArea.innerHTML = notaContent;
             document.body.classList.add('printing-struk');
-            setTimeout(function() { window.print(); }, 800);
+            setTimeout(function() { window.print(); }, 500);
             window.onafterprint = function() { document.body.classList.remove('printing-struk'); printArea.innerHTML = ''; };
         }
 
-        // CETAK STRUK BOS
+        // =======================================================
+        // 2. FUNGSI CETAK BUKTI SETORAN BOS (4 TTD - LOGO GRAYSCALE)
+        // =======================================================
         function cetakStrukSetoranBos(id, tanggal, penyetor, target, nominal, kasir) {
-            setPrintPageStyle('@page { size: A5 landscape; margin: 15mm; }');
+            setPrintPageStyle('@page { size: 8.5in 5.5in; margin: 0; }');
+            
             let htmlPrint = `
-                <style>
-                    #nota-print-area { font-family: 'Arial', sans-serif; font-size: 13px; line-height: 1.5; color: #000; width: 100%; max-width: 185mm; margin: auto; }
-                    .hdr-bos { text-align: center; border-bottom: 3px double #000; padding-bottom: 10px; margin-bottom: 20px; }
-                    .hdr-bos h2 { margin: 0; font-size: 22px; font-weight: 900; letter-spacing: 1px; text-transform: uppercase; }
-                    .hdr-bos p { margin: 3px 0 0 0; font-size: 12px; }
-                    .tb-info { width: 100%; margin-bottom: 20px; font-size: 13px; }
-                    .tb-info td { padding: 4px 5px; vertical-align: middle; }
-                    .lbl { font-weight: bold; width: 130px; }
-                    .val { border-bottom: 1px dashed #000; }
-                    .box-nominal { background-color: #f0f0f0 !important; -webkit-print-color-adjust: exact; border: 2px solid #000; padding: 15px; text-align: center; font-size: 24px; font-weight: bold; margin-bottom: 30px; border-radius: 5px;}
-                    .box-nominal span { font-size: 12px; font-weight: normal; display: block; margin-bottom: 5px; }
-                    .sign-grid { display: flex; justify-content: space-between; text-align: center; margin-top: 50px; font-size: 12px; }
-                    .sign-col { width: 22%; display: flex; flex-direction: column; justify-content: space-between; }
-                    .sign-line { border-bottom: 1px solid #000; margin-top: 60px; font-weight: bold; padding-bottom: 3px; display: block; }
-                </style>
-                <div class="hdr-bos"><h2>BUKTI SETORAN DANA BOS</h2><p>INJEKSI PENAMBAHAN MODAL SHIFT KASIR (REPRINT)</p></div>
-                <table class="tb-info">
-                    <tr><td class="lbl">No. Referensi</td><td width="10">:</td><td class="val"><strong>STB-${id}</strong></td><td width="30"></td><td class="lbl">Masuk Ke</td><td width="10">:</td><td class="val" style="font-size: 15px;"><strong>${target}</strong></td></tr>
-                    <tr><td class="lbl">Tanggal / Waktu</td><td>:</td><td class="val">${tanggal}</td><td></td><td class="lbl">Nama Penyetor</td><td>:</td><td class="val">${penyetor}</td></tr>
-                </table>
-                <div class="box-nominal"><span>JUMLAH MODAL DITERIMA</span>Rp ${nominal}</div>
-                <div class="sign-grid">
-                    <div class="sign-col"><span>Penyetor,</span><span class="sign-line">${penyetor}</span></div>
-                    <div class="sign-col"><span>Shift BRILink,</span><span class="sign-line">${kasir}</span></div>
-                    <div class="sign-col"><span>Manajer,</span><span class="sign-line">(..........................)</span></div>
-                    <div class="sign-col"><span>Bos / Pimpinan,</span><span class="sign-line">(..........................)</span></div>
+                <div style="width: 8in; height: 5in; font-family: Arial, sans-serif; color: #000; border: 3px solid #000; padding: 15px; box-sizing: border-box; background: #fff; margin: 0.2in auto; border-radius: 8px; position: relative; overflow: hidden; page-break-after: avoid;">
+                    
+                    <div style="text-align: center; border-bottom: 2px solid #000; padding-bottom: 5px; margin-bottom: 10px;">
+                        <img src="assets/img/logo-katanyang.png" style="max-height: 40px; filter: grayscale(100%); margin-bottom: 5px; display: block; margin: 0 auto;">
+                        <h2 style="margin:0; font-size:20px; font-weight:900; letter-spacing: 1px;">BUKTI SETORAN DANA BOS</h2>
+                        <p style="margin: 2px 0 0 0; font-size: 12px; font-weight: bold;">INJEKSI PENAMBAHAN MODAL SHIFT KASIR (REPRINT)</p>
+                    </div>
+
+                    <table width="100%" border="0" cellpadding="6" cellspacing="0" style="font-size:13px; margin-bottom: 15px;">
+                        <tr>
+                            <td width="20%"><strong>No. Referensi</strong></td><td width="2%">:</td><td width="38%" style="border-bottom:1px dotted #000;"><strong>STB-${id}</strong></td>
+                            <td width="15%"><strong>Masuk Ke</strong></td><td width="2%">:</td><td width="23%" style="border-bottom:1px dotted #000; font-size: 14px;"><strong>${target}</strong></td>
+                        </tr>
+                        <tr>
+                            <td><strong>Tanggal/Waktu</strong></td><td>:</td><td style="border-bottom:1px dotted #000;">${tanggal}</td>
+                            <td><strong>Penyetor</strong></td><td>:</td><td style="border-bottom:1px dotted #000;">${penyetor}</td>
+                        </tr>
+                    </table>
+
+                    <div style="background-color: #f0f0f0 !important; -webkit-print-color-adjust: exact; border: 2px solid #000; padding: 10px; text-align: center; margin-bottom: 20px; border-radius: 5px;">
+                        <span style="font-size: 11px; font-weight: bold; display: block; margin-bottom: 3px;">JUMLAH MODAL DITERIMA</span>
+                        <strong style="font-size: 22px;">Rp ${nominal}</strong>
+                    </div>
+
+                    <table width="100%" style="text-align:center; font-size:11px; font-weight: bold; margin-top: 20px;">
+                        <tr>
+                            <td width="25%">Penyetor<br><br><br><br>( ${penyetor} )</td>
+                            <td width="25%">Shift BRILink<br><br><br><br>( ${kasir} )</td>
+                            <td width="25%">Manajer<br><br><br><br>( ......................... )</td>
+                            <td width="25%">Bos / Pimpinan<br><br><br><br>( ......................... )</td>
+                        </tr>
+                    </table>
                 </div>
             `;
             let printArea = document.getElementById('nota-print-area');

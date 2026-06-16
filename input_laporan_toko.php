@@ -1,10 +1,12 @@
 <?php
+mysqli_report(MYSQLI_REPORT_OFF);
 require 'config.php';
 if (session_status() == PHP_SESSION_NONE) { session_start(); }
 if (!isset($_SESSION['role']) || $_SESSION['role'] != 'user') { header("Location: index.php"); exit; }
 
 $user_id = $_SESSION['user_id'];
 $tanggal_hari_ini = date('Y-m-d');
+$nama_kasir = isset($_SESSION['username']) ? $_SESSION['username'] : 'Kasir';
 
 // Auto-Create Tabel
 $conn->query("CREATE TABLE IF NOT EXISTS laporan_toko (
@@ -25,20 +27,13 @@ if ($check_jenis && $check_jenis->num_rows == 0) {
 }
 
 $q_user = $conn->query("SELECT cabang_id FROM users WHERE id = '$user_id'");
-$row_user = $q_user ? $q_user->fetch_assoc() : null;
-$default_cabang_id = ($row_user && !empty($row_user['cabang_id'])) ? $row_user['cabang_id'] : 0;
+$user_info = $q_user ? $q_user->fetch_assoc() : [];
+$default_cabang_id = !empty($user_info['cabang_id']) ? $user_info['cabang_id'] : 0;
 $shift_default = isset($_SESSION['shift_ke']) ? $_SESSION['shift_ke'] : 1;
 
 if (isset($_POST['simpan_laporan'])) {
-    // Perbaikan validasi select cabang_id
-    $cabang_input = isset($_POST['cabang_id']) ? (int)$_POST['cabang_id'] : 0;
-    
-    if ($cabang_input == 0) {
-        $_SESSION['flash_error'] = "Lokasi Asal (Nama Toko) belum dipilih!";
-        header("Location: input_laporan_toko.php"); exit;
-    }
-
     $tanggal_input  = $conn->real_escape_string($_POST['tanggal']);
+    $cabang_input   = (int)$_POST['cabang_id'];
     $shift_input    = (int)$_POST['shift_ke'];
     $nama_penyetor  = $conn->real_escape_string(trim($_POST['nama_penyetor']));
     $jumlah_setoran = (float)str_replace('.', '', $_POST['jumlah_setoran']);
@@ -47,6 +42,21 @@ if (isset($_POST['simpan_laporan'])) {
                             VALUES ('$user_id', '$cabang_input', '$tanggal_input', '$shift_input', '$nama_penyetor', '$jumlah_setoran')");
     
     if($insert) {
+        $new_id = $conn->insert_id;
+        
+        // Ambil Nama Toko Untuk Auto-Print
+        $q_toko = $conn->query("SELECT nama_cabang FROM cabang WHERE id = '$cabang_input'");
+        $nama_toko = ($q_toko && $r_toko = $q_toko->fetch_assoc()) ? $r_toko['nama_cabang'] : 'Toko';
+        
+        $_SESSION['print_setoran_toko'] = [
+            'id' => $new_id,
+            'tanggal' => date('d/m/Y', strtotime($tanggal_input)) . ' ' . date('H:i'),
+            'toko' => $nama_toko,
+            'penyetor' => $nama_penyetor,
+            'jumlah' => number_format($jumlah_setoran, 0, ',', '.'),
+            'shift' => $shift_input
+        ];
+
         $_SESSION['flash_success'] = "Laporan setoran berhasil disimpan!";
     } else {
         $_SESSION['flash_error'] = "Gagal menyimpan laporan setoran.";
@@ -74,12 +84,15 @@ if (isset($_POST['simpan_laporan'])) {
         .form-control:focus, .form-select:focus { border-color: var(--bri-blue); box-shadow: none; }
         
         #print-area { display: none; }
-        @media (max-width: 767.98px) { .main-content { margin-left: 0; padding: 20px 15px; padding-top: 85px; } }
+        @media (max-width: 767.98px) { .main-content { margin-left: 0; padding: 80px 15px 20px 15px; } }
 
+        /* CSS CETAK ANTI-ERROR UNTUK PC & HP (Epson LX-310 Compatible) */
         @media print {
-            body.printing-struk #print-area { display: block !important; width: 100%; color: #000; }
-            body.printing-struk .sidebar-modern, body.printing-struk .mobile-header, body.printing-struk .main-content { display: none !important; }
-            body { background-color: white !important; margin: 0; padding: 0; }
+            body { background-color: white !important; margin: 0 !important; padding: 0 !important; }
+            body > :not(#print-area) { display: none !important; }
+            .sidebar-modern, .mobile-header, .main-content { display: none !important; }
+            body.printing-struk #print-area { display: block !important; width: 100%; margin:0; padding:0; }
+            * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
         }
     </style>
 </head>
@@ -104,7 +117,7 @@ if (isset($_POST['simpan_laporan'])) {
                         </div>
                         <div class="mb-3">
                             <label class="form-label text-muted small fw-bold text-uppercase">2. Nama Lokasi Asal</label>
-                            <select name="cabang_id" id="dropdownLokasi" class="form-select" required>
+                            <select name="cabang_id" id="dropdownLokasi" class="form-select" required disabled>
                                 <option value="" disabled selected>-- Pilih Kategori Dahulu --</option>
                             </select>
                         </div>
@@ -128,7 +141,7 @@ if (isset($_POST['simpan_laporan'])) {
                             <label class="form-label text-muted small fw-bold text-uppercase">Jumlah Uang Disetor (Rp)</label>
                             <input type="text" name="jumlah_setoran" class="form-control format-rupiah text-primary fs-5" placeholder="0" required>
                         </div>
-                        <button type="submit" name="simpan_laporan" class="btn-modern w-100"><i class="bi bi-send-fill me-2"></i>Terima & Simpan Setoran</button>
+                        <button type="submit" name="simpan_laporan" class="btn-modern w-100"><i class="bi bi-send-fill me-2"></i>Terima & Cetak Bukti</button>
                     </form>
                 </div>
             </div>
@@ -143,7 +156,7 @@ if (isset($_POST['simpan_laporan'])) {
                                     <th>Tanggal & Lokasi</th>
                                     <th>Penyetor</th>
                                     <th>Jumlah (Rp)</th>
-                                    <th class="text-center">Cetak Bukti</th>
+                                    <th class="text-center">Aksi</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -176,14 +189,14 @@ if (isset($_POST['simpan_laporan'])) {
                                         <button class="btn btn-sm btn-outline-dark rounded-pill px-3 fw-bold shadow-sm" 
                                             onclick="cetakBuktiSetoran(
                                                 '<?= str_pad($r['id'], 5, '0', STR_PAD_LEFT) ?>', 
-                                                '<?= date('d M Y', strtotime($r['tanggal'])) ?>', 
+                                                '<?= date('d M Y / H:i', strtotime($r['tanggal'] . ' ' . ($r['created_at'] ?? '00:00:00'))) ?>', 
                                                 '<?= htmlspecialchars(addslashes($r['nama_cabang'])) ?>', 
                                                 '<?= htmlspecialchars(addslashes($r['nama_penyetor'])) ?>', 
                                                 '<?= number_format($r['jumlah_setoran'], 0, ',', '.') ?>',
                                                 '<?= $r['shift_ke'] ?>',
-                                                '<?= htmlspecialchars(addslashes($_SESSION['username'])) ?>'
+                                                '<?= addslashes($nama_kasir) ?>'
                                             )">
-                                            <i class="bi bi-printer-fill me-1"></i> Cetak NCR
+                                            <i class="bi bi-printer-fill me-1"></i> Cetak Ulang
                                         </button>
                                     </td>
                                 </tr>
@@ -228,8 +241,10 @@ if (isset($_POST['simpan_laporan'])) {
                 }
             });
             
+            dropdownLokasi.disabled = false;
             if (count === 0) {
                 dropdownLokasi.innerHTML = '<option value="" disabled selected>-- Belum ada data di kategori ini --</option>';
+                dropdownLokasi.disabled = true;
             }
         });
 
@@ -250,110 +265,93 @@ if (isset($_POST['simpan_laporan'])) {
             style.innerHTML = styleRule;
         }
 
+        // =======================================================
+        // FUNGSI CETAK BUKTI SETORAN TOKO
+        // (Tabel Murni, Anti Flexbox, Fix Tinggi 5 Inci untuk LX-310 dengan 4 TTD)
+        // =======================================================
         function cetakBuktiSetoran(id, tanggal, toko, penyetor, jumlah, shift, penerima) {
-            setPrintPageStyle('@page { size: A5 landscape; margin: 15mm; }');
+            setPrintPageStyle('@page { size: 8.5in 5.5in; margin: 0; }');
             
             let htmlPrint = `
-                <style>
-                    #print-area { font-family: 'Arial', sans-serif; font-size: 13px; line-height: 1.5; color: #000; width: 100%; max-width: 185mm; margin: auto; }
-                    .ncr-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px dashed #000; padding-bottom: 12px; margin-bottom: 15px; }
-                    .ncr-logo-wrapper { display: flex; align-items: center; }
-                    .ncr-logo-wrapper img { max-height: 55px; margin-right: 15px; filter: grayscale(100%); }
-                    .ncr-logo-text { font-size: 20px; font-weight: 900; text-transform: uppercase; letter-spacing: 1px; font-family: 'Arial', sans-serif; }
-                    .ncr-logo-sub { font-size: 11px; font-weight: normal; letter-spacing: normal; display: block; margin-top: 2px; }
-                    .ncr-title-box { text-align: right; }
-                    .ncr-title { font-size: 18px; font-weight: bold; letter-spacing: 1px; font-family: 'Arial', sans-serif; }
-                    .ncr-ref { font-size: 12px; font-weight: bold; margin-top: 3px; display: block; }
-                    .ncr-info { display: flex; justify-content: space-between; margin-bottom: 15px; font-size: 13px; font-family: 'Arial', sans-serif; }
-                    .ncr-info-table { width: 100%; }
-                    .ncr-info-table td { padding: 3px 5px; vertical-align: top; }
-                    .ncr-table { width: 100%; border-collapse: collapse; margin-bottom: 15px; font-family: 'Arial', sans-serif; }
-                    .ncr-table th, .ncr-table td { border: 1px solid #000; padding: 10px; }
-                    .ncr-table th { text-align: center; font-weight: bold; background-color: #f0f0f0 !important; -webkit-print-color-adjust: exact; }
+                <div style="width: 8in; height: 5in; font-family: Arial, sans-serif; color: #000; border: 3px solid #000; padding: 15px; box-sizing: border-box; background: #fff; margin: 0.2in auto; border-radius: 8px; position: relative; overflow: hidden; page-break-after: avoid;">
                     
-                    /* FORMAT 4 TTD BARU */
-                    .sign-grid { display: flex; justify-content: space-between; text-align: center; margin-top: 40px; font-size: 12px; font-family: 'Arial', sans-serif; }
-                    .sign-col { width: 22%; display: flex; flex-direction: column; justify-content: space-between; }
-                    .sign-line { border-bottom: 1px solid #000; margin-top: 60px; font-weight: bold; padding-bottom: 3px; display: block; }
-                </style>
-                
-                <div class="ncr-header">
-                    <div class="ncr-logo-wrapper">
-                        <img src="assets/img/logo-katanyang.png" alt="Logo">
-                        <div>
-                            <div class="ncr-logo-text">${toko}</div>
-                            <span class="ncr-logo-sub">Tanda Terima Penyerahan Uang Kasir</span>
-                        </div>
+                    <div style="text-align: center; border-bottom: 2px solid #000; padding-bottom: 5px; margin-bottom: 15px;">
+                        <img src="assets/img/logo-katanyang.png" style="max-height: 35px; filter: grayscale(100%); margin-bottom: 4px; display: block; margin: 0 auto;">
+                        <h2 style="margin:0; font-size:22px; font-weight:900; letter-spacing: 1px;">BUKTI SETORAN TOKO</h2>
+                        <p style="margin: 2px 0 0 0; font-size: 13px; font-weight: bold;">TANDA TERIMA PENYERAHAN UANG KASIR</p>
                     </div>
-                    <div class="ncr-title-box">
-                        <div class="ncr-title">BUKTI SETORAN</div>
-                        <span class="ncr-ref">NO: STR-${id}</span>
-                    </div>
-                </div>
 
-                <div class="ncr-info">
-                    <div style="width: 48%;">
-                        <table class="ncr-info-table">
-                            <tr><td width="100">Disetor Oleh</td><td width="10">:</td><td><strong>${penyetor}</strong></td></tr>
-                            <tr><td>Shift Penyetor</td><td>:</td><td>Shift ${shift}</td></tr>
-                        </table>
-                    </div>
-                    <div style="width: 48%;">
-                        <table class="ncr-info-table">
-                            <tr><td width="100">Tanggal</td><td width="10">:</td><td><strong>${tanggal}</strong></td></tr>
-                            <tr><td>Lokasi / Toko</td><td>:</td><td>${toko}</td></tr>
-                        </table>
-                    </div>
-                </div>
-
-                <table class="ncr-table">
-                    <thead>
-                        <tr><th width="10%">QTY</th><th width="60%">DESKRIPSI SETORAN</th><th width="30%">JUMLAH (Rp)</th></tr>
-                    </thead>
-                    <tbody>
+                    <table width="100%" border="0" cellpadding="6" cellspacing="0" style="font-size:13px; margin-bottom: 20px;">
                         <tr>
-                            <td style="text-align: center; height: 60px; vertical-align: top;">1</td>
-                            <td style="vertical-align: top;">
-                                <strong>Setoran Uang Fisik Akhir Shift</strong><br>
-                                <small>Pendapatan tunai laci kasir (telah disesuaikan dengan laporan sistem).</small>
-                            </td>
-                            <td style="text-align: right; font-size: 16px; font-weight: bold; vertical-align: top;">${jumlah}</td>
+                            <td width="18%"><strong>No. Referensi</strong></td><td width="2%">:</td><td width="35%" style="border-bottom:1px dotted #000;"><strong>STR-${id}</strong></td>
+                            <td width="15%"><strong>Lokasi / Toko</strong></td><td width="2%">:</td><td width="28%" style="border-bottom:1px dotted #000; font-size: 15px;"><strong>${toko}</strong></td>
                         </tr>
-                    </tbody>
-                    <tfoot>
                         <tr>
-                            <td colspan="2" style="text-align: right; font-weight: bold; padding: 10px;">TOTAL SETORAN KASIR :</td>
-                            <td style="text-align: right; font-size: 18px; font-weight: bold; background-color: #f0f0f0 !important; -webkit-print-color-adjust: exact;">Rp ${jumlah}</td>
+                            <td><strong>Tanggal/Waktu</strong></td><td>:</td><td style="border-bottom:1px dotted #000;">${tanggal}</td>
+                            <td><strong>Penyetor</strong></td><td>:</td><td style="border-bottom:1px dotted #000;">${penyetor} (Shift ${shift})</td>
                         </tr>
-                    </tfoot>
-                </table>
+                    </table>
 
-                <div class="sign-grid">
-                    <div class="sign-col"><span>Disetor Oleh (Toko),</span><span class="sign-line">${penyetor}</span></div>
-                    <div class="sign-col"><span>Diterima Oleh (Agen),</span><span class="sign-line">${penerima}</span></div>
-                    <div class="sign-col"><span>Manajer,</span><span class="sign-line">(..........................)</span></div>
-                    <div class="sign-col"><span>Bos / Pimpinan,</span><span class="sign-line">(..........................)</span></div>
+                    <table width="100%" border="1" cellpadding="8" cellspacing="0" style="font-size: 13px; border-collapse: collapse; margin-bottom: 20px; border: 1px solid #000;">
+                        <thead>
+                            <tr style="background-color: #f0f0f0 !important; -webkit-print-color-adjust: exact;">
+                                <th width="10%">QTY</th>
+                                <th width="60%">DESKRIPSI SETORAN</th>
+                                <th width="30%">JUMLAH (Rp)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td align="center" style="height: 50px;" valign="top">1</td>
+                                <td valign="top">
+                                    <strong>Setoran Uang Fisik Akhir Shift</strong><br>
+                                    <span style="font-size: 11px;">Pendapatan tunai laci kasir cabang.</span>
+                                </td>
+                                <td align="right" valign="top" style="font-size: 16px; font-weight: bold;">${jumlah}</td>
+                            </tr>
+                        </tbody>
+                        <tfoot>
+                            <tr>
+                                <td colspan="2" align="right" style="font-weight: bold; padding-right: 10px;">TOTAL SETORAN KASIR :</td>
+                                <td align="right" style="font-size: 18px; font-weight: bold; background-color: #f0f0f0 !important; -webkit-print-color-adjust: exact;">Rp ${jumlah}</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+
+                    <table width="100%" style="text-align:center; font-size:11px; font-weight: bold; position: absolute; bottom: 20px; left: 0;">
+                        <tr>
+                            <td width="25%">Penyetor<br><br><br><br><br>( ${penyetor} )</td>
+                            <td width="25%">Penerima (BRILink)<br><br><br><br><br>( ${penerima} )</td>
+                            <td width="25%">Manajer<br><br><br><br><br>( ......................... )</td>
+                            <td width="25%">Bos / Pimpinan<br><br><br><br><br>( ......................... )</td>
+                        </tr>
+                    </table>
                 </div>
             `;
 
             let printArea = document.getElementById('print-area');
             printArea.innerHTML = htmlPrint;
             document.body.classList.add('printing-struk');
-
             setTimeout(function() { window.print(); }, 500);
-
             window.onafterprint = function() {
                 document.body.classList.remove('printing-struk');
                 printArea.innerHTML = ''; 
             };
         }
 
-        <?php if (isset($_SESSION['flash_success'])): ?>
+        <?php if (isset($_SESSION['flash_success']) && !isset($_SESSION['print_setoran_toko'])): ?>
             Swal.fire({ toast: true, position: 'top-end', showConfirmButton: false, timer: 3000, icon: 'success', title: '<?= $_SESSION['flash_success']; ?>' });
         <?php unset($_SESSION['flash_success']); endif; ?>
+        
         <?php if (isset($_SESSION['flash_error'])): ?>
             Swal.fire({ icon: 'error', title: 'Oops...', text: '<?= $_SESSION['flash_error']; ?>', confirmButtonColor: '#00529C' });
         <?php unset($_SESSION['flash_error']); endif; ?>
+
+        // AUTO-PRINT SETELAH INPUT BARU
+        <?php if (isset($_SESSION['print_setoran_toko'])): $p = $_SESSION['print_setoran_toko']; ?>
+            Swal.fire({ toast: true, position: 'top-end', showConfirmButton: false, timer: 3000, icon: 'success', title: '<?= $_SESSION['flash_success'] ?? "Setoran berhasil disimpan!" ?>' });
+            cetakBuktiSetoran('<?= str_pad($p['id'], 5, '0', STR_PAD_LEFT) ?>', '<?= $p['tanggal'] ?>', '<?= addslashes($p['toko']) ?>', '<?= addslashes($p['penyetor']) ?>', '<?= $p['jumlah'] ?>', '<?= $p['shift'] ?>', '<?= addslashes($nama_kasir) ?>');
+        <?php unset($_SESSION['print_setoran_toko'], $_SESSION['flash_success']); endif; ?>
     </script>
 </body>
 </html>

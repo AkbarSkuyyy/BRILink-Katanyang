@@ -20,8 +20,15 @@ $conn->query("CREATE TABLE IF NOT EXISTS buka_rekening (
     jenis_layanan VARCHAR(50) NOT NULL,
     status VARCHAR(50) NOT NULL DEFAULT 'Diproses',
     tanggal_selesai DATE NULL,
+    foto_bukti VARCHAR(255) NULL DEFAULT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 )");
+
+// Cek & Tambah Kolom Foto
+$check_foto = $conn->query("SHOW COLUMNS FROM buka_rekening LIKE 'foto_bukti'");
+if ($check_foto && $check_foto->num_rows == 0) {
+    $conn->query("ALTER TABLE buka_rekening ADD foto_bukti VARCHAR(255) NULL DEFAULT NULL");
+}
 
 // Dapatkan Cabang ID Kasir
 $q_user = $conn->query("SELECT cabang_id FROM users WHERE id = '$user_id'");
@@ -49,6 +56,7 @@ if (isset($_POST['tambah_pendaftaran'])) {
             'id' => $new_id, 
             'nama' => $nama, 
             'nik' => $nik, 
+            'hp' => $hp,
             'layanan' => $layanan,
             'cabang' => $nama_cabang_cetak
         ];
@@ -59,13 +67,36 @@ if (isset($_POST['tambah_pendaftaran'])) {
     header("Location: buka_rekening.php"); exit;
 }
 
-// 3. PROSES UBAH STATUS
+// 3. PROSES UBAH STATUS & UPLOAD FOTO BUKTI
 if (isset($_POST['ubah_status'])) {
     $id_rek = (int)$_POST['id_rekening'];
     $status_baru = $conn->real_escape_string($_POST['status']);
     $tgl_selesai = ($status_baru == 'Selesai') ? "'$tanggal_hari_ini'" : "NULL";
 
-    $conn->query("UPDATE buka_rekening SET status = '$status_baru', tanggal_selesai = $tgl_selesai WHERE id = '$id_rek'");
+    $query_update = "UPDATE buka_rekening SET status = '$status_baru', tanggal_selesai = $tgl_selesai";
+
+    if ($status_baru == 'Selesai' && isset($_FILES['foto_bukti']) && $_FILES['foto_bukti']['error'] == 0) {
+        $target_dir = "uploads/bukti_rekening/";
+        if (!file_exists($target_dir)) { mkdir($target_dir, 0777, true); }
+        
+        $file_extension = pathinfo($_FILES["foto_bukti"]["name"], PATHINFO_EXTENSION);
+        $new_filename = "BUKTI_REK_" . $id_rek . "_" . time() . "." . $file_extension;
+        $target_file = $target_dir . $new_filename;
+
+        $check = getimagesize($_FILES["foto_bukti"]["tmp_name"]);
+        if($check !== false) {
+            if (move_uploaded_file($_FILES["foto_bukti"]["tmp_name"], $target_file)) {
+                $query_update .= ", foto_bukti = '$target_file'";
+            }
+        } else {
+            $_SESSION['flash_error'] = "File yang diunggah bukan gambar valid.";
+            header("Location: buka_rekening.php"); exit;
+        }
+    }
+
+    $query_update .= " WHERE id = '$id_rek'";
+    $conn->query($query_update);
+
     $_SESSION['flash_success'] = "Status pendaftaran berhasil diperbarui!";
     header("Location: buka_rekening.php"); exit;
 }
@@ -87,7 +118,6 @@ $q_data = $conn->query("
     ORDER BY b.id DESC
 ");
 
-// Metrik Mini Card
 $where_metric = $is_admin ? "1=1" : "cabang_id = '$cabang_id_user'";
 $tot_daftar = $conn->query("SELECT COUNT(id) as c FROM buka_rekening WHERE $where_metric")->fetch_assoc()['c'] ?? 0;
 $tot_proses = $conn->query("SELECT COUNT(id) as c FROM buka_rekening WHERE status='Diproses' AND $where_metric")->fetch_assoc()['c'] ?? 0;
@@ -127,14 +157,11 @@ $tot_selesai= $conn->query("SELECT COUNT(id) as c FROM buka_rekening WHERE statu
         #print-area { display: none; }
         @media (max-width: 767.98px) { .main-content { margin-left: 0; padding: 20px 15px; padding-top: 85px; } }
 
-        /* ========================================================
-           CSS OUTPUT KHUSUS PRINTER THERMAL KASIR (58MM)
-        ======================================================== */
         @media print {
-            body.printing-struk #print-area { display: block !important; color: #000; font-family: 'Courier New', monospace; font-size: 11px; line-height: 1.3; margin: 0; padding: 0; }
-            body.printing-struk .sidebar-modern, body.printing-struk .mobile-header, body.printing-struk .main-content { display: none !important; }
-            body { background-color: white !important; margin: 0; padding: 0; }
-            @page { size: 58mm auto; margin: 0; }
+            body.printing-struk > :not(#print-area) { display: none !important; }
+            body.printing-struk { background-color: #fff !important; margin: 0; padding: 0; }
+            #print-area { display: flex !important; justify-content: center; align-items: center; width: 100% !important; margin: 0; padding: 0; }
+            @page { size: 8.5in 5.5in; margin: 0; } 
         }
     </style>
 </head>
@@ -241,9 +268,13 @@ $tot_selesai= $conn->query("SELECT COUNT(id) as c FROM buka_rekening WHERE statu
                                     <button class="btn btn-sm btn-light border fw-bold" data-bs-toggle="modal" data-bs-target="#modalStatus<?= $row['id'] ?>"><i class="bi bi-pencil-square text-warning"></i> Status</button>
                                     
                                     <?php if($row['status'] != 'Selesai'): ?>
-                                        <button class="btn btn-sm btn-light border fw-bold text-primary" onclick="cetakPendaftaran('<?= $row['id'] ?>', '<?= date('d/m/Y', strtotime($row['created_at'])) ?>', '<?= htmlspecialchars(addslashes($row['nama_nasabah'])) ?>', '<?= htmlspecialchars(addslashes($row['nik'])) ?>', '<?= htmlspecialchars(addslashes($row['jenis_layanan'])) ?>', '<?= htmlspecialchars(addslashes($row['nama_cabang'])) ?>')"><i class="bi bi-printer-fill"></i> Struk Daftar</button>
+                                        <button class="btn btn-sm btn-light border fw-bold text-primary" onclick="cetakPendaftaran('<?= $row['id'] ?>', '<?= date('d M Y', strtotime($row['created_at'])) ?>', '<?= htmlspecialchars(addslashes($row['nama_nasabah'])) ?>', '<?= htmlspecialchars(addslashes($row['nik'])) ?>', '<?= htmlspecialchars(addslashes($row['no_hp'])) ?>', '<?= htmlspecialchars(addslashes($row['jenis_layanan'])) ?>', '<?= htmlspecialchars(addslashes($row['nama_cabang'])) ?>')"><i class="bi bi-printer-fill"></i> Cetak Pendaftaran</button>
                                     <?php else: ?>
-                                        <button class="btn btn-sm btn-light border fw-bold text-success" onclick="cetakPengambilan('<?= $row['id'] ?>', '<?= date('d/m/Y', strtotime($row['tanggal_selesai'])) ?>', '<?= htmlspecialchars(addslashes($row['nama_nasabah'])) ?>', '<?= htmlspecialchars(addslashes($row['nik'])) ?>', '<?= htmlspecialchars(addslashes($row['jenis_layanan'])) ?>', '<?= htmlspecialchars(addslashes($row['nama_cabang'])) ?>')"><i class="bi bi-check-circle-fill"></i> Struk Ambil</button>
+                                        <button class="btn btn-sm btn-light border fw-bold text-success" onclick="cetakPengambilan('<?= $row['id'] ?>', '<?= date('d M Y', strtotime($row['tanggal_selesai'])) ?>', '<?= htmlspecialchars(addslashes($row['nama_nasabah'])) ?>', '<?= htmlspecialchars(addslashes($row['nik'])) ?>', '<?= htmlspecialchars(addslashes($row['no_hp'])) ?>', '<?= htmlspecialchars(addslashes($row['jenis_layanan'])) ?>', '<?= htmlspecialchars(addslashes($row['nama_cabang'])) ?>')"><i class="bi bi-printer-fill"></i> Cetak Bukti</button>
+                                        
+                                        <?php if(!empty($row['foto_bukti'])): ?>
+                                            <button class="btn btn-sm btn-light border fw-bold text-info" onclick="lihatFoto('<?= $row['foto_bukti'] ?>')"><i class="bi bi-image"></i> Foto</button>
+                                        <?php endif; ?>
                                     <?php endif; ?>
                                 </div>
                             </td>
@@ -257,22 +288,29 @@ $tot_selesai= $conn->query("SELECT COUNT(id) as c FROM buka_rekening WHERE statu
                                         <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                                     </div>
                                     <div class="modal-body pt-0">
-                                        <form method="POST">
+                                        <form method="POST" enctype="multipart/form-data">
                                             <input type="hidden" name="id_rekening" value="<?= $row['id'] ?>">
                                             <p class="small text-muted mb-3">Atas Nama: <strong><?= htmlspecialchars($row['nama_nasabah']) ?></strong></p>
                                             
                                             <div class="form-check mb-2">
-                                                <input class="form-check-input" type="radio" name="status" value="Diproses" id="st1<?= $row['id'] ?>" <?= $row['status'] == 'Diproses' ? 'checked' : '' ?>>
+                                                <input class="form-check-input" type="radio" name="status" value="Diproses" id="st1<?= $row['id'] ?>" <?= $row['status'] == 'Diproses' ? 'checked' : '' ?> onclick="toggleFoto(<?= $row['id'] ?>, 'Diproses')">
                                                 <label class="form-check-label fw-bold text-warning" for="st1<?= $row['id'] ?>">Diproses Bank</label>
                                             </div>
                                             <div class="form-check mb-2">
-                                                <input class="form-check-input" type="radio" name="status" value="Siap Diambil" id="st2<?= $row['id'] ?>" <?= $row['status'] == 'Siap Diambil' ? 'checked' : '' ?>>
-                                                <label class="form-check-label fw-bold text-info" for="st2<?= $row['id'] ?>">Sudah Jadi (Di Meja Agen)</label>
+                                                <input class="form-check-input" type="radio" name="status" value="Siap Diambil" id="st2<?= $row['id'] ?>" <?= $row['status'] == 'Siap Diambil' ? 'checked' : '' ?> onclick="toggleFoto(<?= $row['id'] ?>, 'Siap Diambil')">
+                                                <label class="form-check-label fw-bold text-info" for="st2<?= $row['id'] ?>">Sudah Jadi (Di Agen)</label>
                                             </div>
-                                            <div class="form-check mb-4">
-                                                <input class="form-check-input" type="radio" name="status" value="Selesai" id="st3<?= $row['id'] ?>" <?= $row['status'] == 'Selesai' ? 'checked' : '' ?>>
+                                            <div class="form-check mb-3">
+                                                <input class="form-check-input" type="radio" name="status" value="Selesai" id="st3<?= $row['id'] ?>" <?= $row['status'] == 'Selesai' ? 'checked' : '' ?> onclick="toggleFoto(<?= $row['id'] ?>, 'Selesai')">
                                                 <label class="form-check-label fw-bold text-success" for="st3<?= $row['id'] ?>">Telah Diambil Nasabah</label>
                                             </div>
+
+                                            <div class="mb-4 bg-light p-2 rounded-3" id="formFoto<?= $row['id'] ?>" style="display: <?= $row['status'] == 'Selesai' ? 'block' : 'none' ?>;">
+                                                <label class="form-label small fw-bold text-dark"><i class="bi bi-camera text-primary"></i> Upload Bukti Foto (Opsional)</label>
+                                                <input type="file" name="foto_bukti" class="form-control form-control-sm" accept="image/*" capture="environment">
+                                                <small class="text-muted" style="font-size: 10px;">Foto nasabah memegang buku/ATM.</small>
+                                            </div>
+
                                             <button type="submit" name="ubah_status" class="btn btn-dark w-100 rounded-pill">Simpan Status</button>
                                         </form>
                                     </div>
@@ -280,7 +318,7 @@ $tot_selesai= $conn->query("SELECT COUNT(id) as c FROM buka_rekening WHERE statu
                             </div>
                         </div>
                         <?php endwhile; else: ?>
-                        <tr><td colspan="5" class="text-center text-muted py-5">Tidak ada data pendaftaran rekening.</td></tr>
+                        <tr><td colspan="6" class="text-center text-muted py-5">Tidak ada data pendaftaran rekening.</td></tr>
                         <?php endif; ?>
                     </tbody>
                 </table>
@@ -333,7 +371,7 @@ $tot_selesai= $conn->query("SELECT COUNT(id) as c FROM buka_rekening WHERE statu
                                 <option value="Ganti ATM Rusak/Hilang">Ganti ATM Rusak / Hilang</option>
                             </select>
                         </div>
-                        <button type="submit" name="tambah_pendaftaran" class="btn btn-modern w-100 py-3 fs-5 rounded-pill">Simpan & Cetak Struk</button>
+                        <button type="submit" name="tambah_pendaftaran" class="btn btn-modern w-100 py-3 fs-5 rounded-pill">Simpan & Cetak Form</button>
                     </form>
                 </div>
             </div>
@@ -344,46 +382,63 @@ $tot_selesai= $conn->query("SELECT COUNT(id) as c FROM buka_rekening WHERE statu
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     <script>
+        function toggleFoto(id, status) {
+            let container = document.getElementById('formFoto' + id);
+            if (status === 'Selesai') container.style.display = 'block';
+            else container.style.display = 'none';
+        }
+
+        function lihatFoto(url) {
+            Swal.fire({
+                title: 'Bukti Serah Terima',
+                imageUrl: url,
+                imageWidth: '100%',
+                imageAlt: 'Bukti Foto',
+                confirmButtonColor: '#00529C',
+                confirmButtonText: 'Tutup'
+            });
+        }
+
         function setPrintPageStyle(styleRule) {
             let style = document.getElementById('dynamic-print-style');
             if (!style) { style = document.createElement('style'); style.id = 'dynamic-print-style'; document.head.appendChild(style); }
             style.innerHTML = styleRule;
         }
 
-        // =======================================================
-        // 1. STRUK PENDAFTARAN BARU (THERMAL STYLE 58MM RATA KIRI KANAN)
-        // =======================================================
-        function cetakPendaftaran(id, tanggal, nama, nik, layanan, cabang) {
-            setPrintPageStyle('@page { size: 58mm auto; margin: 0; }');
+        function cetakPendaftaran(id, tanggal, nama, nik, hp, layanan, cabang) {
+            setPrintPageStyle('@page { size: 8.5in 5.5in; margin: 0.1in; }');
             let htmlPrint = `
-                <div style="width: 52mm; padding: 4px; font-family: 'Courier New', monospace; font-size: 11px; color: #000; line-height: 1.3;">
-                    <div style="text-align: center; margin-bottom: 4px;">
-                        <div style="font-size: 14px; font-weight: bold;">AGEN BRILINK</div>
-                        <div style="font-size: 11px; font-weight: bold;">${cabang.toUpperCase()}</div>
+                <div style="width: 8in; height: 5.2in; margin: 0.1in auto; padding: 0.2in; border: 3px solid #000; font-family: Arial, sans-serif; color: #000; box-sizing: border-box; background-color: #fff;">
+                    <div style="text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 15px;">
+                        <img src="assets/img/logo-katanyang.png" alt="Logo" style="height: 45px; filter: grayscale(100%); margin-bottom: 8px;">
+                        <h3 style="margin: 0; font-size: 16px; font-weight: bold; text-decoration: underline; letter-spacing: 1px;">TANDA TERIMA</h3>
+                        <h2 style="margin: 5px 0; font-size: 20px; font-weight: 900; letter-spacing: 1px;">PENDAFTARAN BUKU REKENING</h2>
+                        <p style="margin: 0; font-size: 14px; font-weight: bold;">AGEN BRILINK ${cabang.toUpperCase()}</p>
                     </div>
-                    <div style="text-align: center;">================================</div>
-                    <div style="text-align: center; font-weight: bold; margin: 4px 0;">STRUK DAFTAR REKENING</div>
-                    <div style="text-align: center;">--------------------------------</div>
-                    <div style="display: flex; justify-content: space-between;"><span>NO REGIST</span><span>REG-${id.padStart(4, '0')}</span></div>
-                    <div style="display: flex; justify-content: space-between;"><span>TANGGAL</span><span>${tanggal}</span></div>
-                    <div style="text-align: center;">--------------------------------</div>
-                    <div style="display: flex; justify-content: space-between;"><span>NAMA</span><span style="text-align: right; max-width: 120px; word-wrap: break-word;">${nama.toUpperCase()}</span></div>
-                    <div style="display: flex; justify-content: space-between;"><span>NIK</span><span>${nik}</span></div>
-                    <div style="display: flex; justify-content: space-between;"><span>LAYANAN</span><span style="text-align: right; max-width: 110px; word-wrap: break-word;">${layanan.toUpperCase()}</span></div>
-                    <div style="text-align: center;">================================</div>
-                    <div style="text-align: justify; font-size: 10px; line-height: 1.2; font-weight: bold; margin-top: 5px;">
-                        * PERHATIAN *<br>
-                        STRUK INI ADALAH BUKTI SAH.<br>
-                        WAJIB DIBAWA BESERTA KTP ASLI<br>
-                        SAAT PENGAMBILAN BUKU/ATM<br>
-                        DI AGEN BRILINK.
+                    
+                    <table style="width: 100%; font-size: 14px; font-weight: bold; margin-bottom: 15px; border-collapse: collapse;">
+                        <tr><td style="padding: 4px 0; width: 140px;">TGL DAFTAR</td><td style="width: 15px;">:</td><td>${tanggal}</td></tr>
+                        <tr><td style="padding: 4px 0;">NO. REGISTRASI</td><td>:</td><td>REG-${id.padStart(4, '0')}</td></tr>
+                        <tr><td style="padding: 4px 0;">NAMA NASABAH</td><td>:</td><td style="text-transform: uppercase;">${nama}</td></tr>
+                        <tr><td style="padding: 4px 0;">N. I. K</td><td>:</td><td>${nik}</td></tr>
+                        <tr><td style="padding: 4px 0;">NO. HP</td><td>:</td><td>${hp}</td></tr>
+                        <tr><td style="padding: 4px 0;">LAYANAN</td><td>:</td><td style="text-transform: uppercase;">${layanan}</td></tr>
+                    </table>
+                    
+                    <table style="width: 100%; text-align: center; font-size: 14px; font-weight: bold; margin-bottom: 10px; border-collapse: collapse;">
+                        <tr>
+                            <td style="width: 50%;">PENDAFTAR</td>
+                            <td style="width: 50%;">PETUGAS</td>
+                        </tr>
+                        <tr>
+                            <td style="padding-top: 60px; text-decoration: underline; text-transform: uppercase;">${nama}</td>
+                            <td style="padding-top: 60px;">( ................................... )</td>
+                        </tr>
+                    </table>
+                    
+                    <div style="text-align: center; font-size: 12px; font-style: italic; font-weight: bold; border-top: 1px dashed #000; padding-top: 10px;">
+                        * PERHATIAN: Tanda terima ini harap dibawa beserta KTP ASLI pada saat pengambilan buku tabungan / ATM.
                     </div>
-                    <div style="text-align: center; margin-top: 4px;">================================</div>
-                    <div style="display: flex; justify-content: space-between; text-align: center; margin-top: 25px; font-size: 10px;">
-                        <div style="width: 45%;">Nasabah,<br><br><br><br>(............)</div>
-                        <div style="width: 45%;">Petugas,<br><br><br><br>(............)</div>
-                    </div>
-                    <div style="text-align: center; margin-top: 15px; font-weight: bold;">TERIMA KASIH</div>
                 </div>
             `;
             let printArea = document.getElementById('print-area');
@@ -393,39 +448,40 @@ $tot_selesai= $conn->query("SELECT COUNT(id) as c FROM buka_rekening WHERE statu
             window.onafterprint = function() { document.body.classList.remove('printing-struk'); printArea.innerHTML = ''; };
         }
 
-        // =======================================================
-        // 2. STRUK PENGAMBILAN BUKU / ATM (THERMAL STYLE 58MM RATA KIRI KANAN)
-        // =======================================================
-        function cetakPengambilan(id, tanggal, nama, nik, layanan, cabang) {
-            setPrintPageStyle('@page { size: 58mm auto; margin: 0; }');
+        function cetakPengambilan(id, tanggal, nama, nik, hp, layanan, cabang) {
+            setPrintPageStyle('@page { size: 8.5in 5.5in; margin: 0.1in; }');
             let htmlPrint = `
-                <div style="width: 52mm; padding: 4px; font-family: 'Courier New', monospace; font-size: 11px; color: #000; line-height: 1.3;">
-                    <div style="text-align: center; margin-bottom: 4px;">
-                        <div style="font-size: 14px; font-weight: bold;">AGEN BRILINK</div>
-                        <div style="font-size: 12px; font-weight: bold;">${cabang.toUpperCase()}</div>
+                <div style="width: 8in; height: 5.2in; margin: 0.1in auto; padding: 0.2in; border: 3px solid #000; font-family: Arial, sans-serif; color: #000; box-sizing: border-box; background-color: #fff;">
+                    <div style="text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 15px;">
+                        <img src="assets/img/logo-katanyang.png" alt="Logo" style="height: 45px; filter: grayscale(100%); margin-bottom: 8px;">
+                        <h3 style="margin: 0; font-size: 16px; font-weight: bold; text-decoration: underline; letter-spacing: 1px;">BUKTI PENYERAHAN</h3>
+                        <h2 style="margin: 5px 0; font-size: 20px; font-weight: 900; letter-spacing: 1px;">BUKU REKENING / KARTU ATM</h2>
+                        <p style="margin: 0; font-size: 14px; font-weight: bold;">AGEN BRILINK ${cabang.toUpperCase()}</p>
                     </div>
-                    <div style="text-align: center;">================================</div>
-                    <div style="text-align: center; font-weight: bold; margin: 4px 0;">BUKTI SERAH TERIMA</div>
-                    <div style="text-align: center;">--------------------------------</div>
-                    <div style="display: flex; justify-content: space-between;"><span>NO REGIST</span><span>REG-${id.padStart(4, '0')}</span></div>
-                    <div style="display: flex; justify-content: space-between;"><span>TGL AMBIL</span><span>${tanggal}</span></div>
-                    <div style="display: flex; justify-content: space-between;"><span>STATUS</span><span>SELESAI / DIAMBIL</span></div>
-                    <div style="text-align: center;">--------------------------------</div>
-                    <div style="display: flex; justify-content: space-between;"><span>NAMA</span><span style="text-align: right; max-width: 120px; word-wrap: break-word;">${nama.toUpperCase()}</span></div>
-                    <div style="display: flex; justify-content: space-between;"><span>NIK</span><span>${nik}</span></div>
-                    <div style="display: flex; justify-content: space-between;"><span>LAYANAN</span><span style="text-align: right; max-width: 110px; word-wrap: break-word;">${layanan.toUpperCase()}</span></div>
-                    <div style="text-align: center;">================================</div>
-                    <div style="text-align: center; font-size: 10px; line-height: 1.2; margin-top: 5px; font-weight: bold;">
-                        Buku Tabungan & Kartu ATM<br>
-                        telah diserahkan kepada nasabah<br>
-                        dalam keadaan baik dan aktif.
+                    
+                    <table style="width: 100%; font-size: 14px; font-weight: bold; margin-bottom: 15px; border-collapse: collapse;">
+                        <tr><td style="padding: 4px 0; width: 140px;">TGL DIAMBIL</td><td style="width: 15px;">:</td><td>${tanggal}</td></tr>
+                        <tr><td style="padding: 4px 0;">NO. REGISTRASI</td><td>:</td><td>REG-${id.padStart(4, '0')}</td></tr>
+                        <tr><td style="padding: 4px 0;">NAMA NASABAH</td><td>:</td><td style="text-transform: uppercase;">${nama}</td></tr>
+                        <tr><td style="padding: 4px 0;">N. I. K</td><td>:</td><td>${nik}</td></tr>
+                        <tr><td style="padding: 4px 0;">NO. HP</td><td>:</td><td>${hp}</td></tr>
+                        <tr><td style="padding: 4px 0;">LAYANAN</td><td>:</td><td style="text-transform: uppercase;">${layanan}</td></tr>
+                    </table>
+                    
+                    <table style="width: 100%; text-align: center; font-size: 14px; font-weight: bold; margin-bottom: 10px; border-collapse: collapse;">
+                        <tr>
+                            <td style="width: 50%;">PENERIMA</td>
+                            <td style="width: 50%;">PETUGAS PENYERAH</td>
+                        </tr>
+                        <tr>
+                            <td style="padding-top: 60px; text-decoration: underline; text-transform: uppercase;">${nama}</td>
+                            <td style="padding-top: 60px;">( ................................... )</td>
+                        </tr>
+                    </table>
+                    
+                    <div style="text-align: center; font-size: 12px; font-style: italic; font-weight: bold; border-top: 1px dashed #000; padding-top: 10px;">
+                        "Saya menyatakan bahwa Buku Tabungan / Kartu ATM telah saya terima dalam keadaan aktif, tersegel, dan sesuai dengan identitas diri."
                     </div>
-                    <div style="text-align: center; margin-top: 4px;">================================</div>
-                    <div style="display: flex; justify-content: space-between; text-align: center; margin-top: 25px; font-size: 10px;">
-                        <div style="width: 45%;">Penerima,<br><br><br><br>(............)</div>
-                        <div style="width: 45%;">Petugas,<br><br><br><br>(............)</div>
-                    </div>
-                    <div style="text-align: center; margin-top: 15px; font-weight: bold;">TERIMA KASIH</div>
                 </div>
             `;
             let printArea = document.getElementById('print-area');
@@ -434,20 +490,13 @@ $tot_selesai= $conn->query("SELECT COUNT(id) as c FROM buka_rekening WHERE statu
             setTimeout(function() { window.print(); }, 500);
             window.onafterprint = function() { document.body.classList.remove('printing-struk'); printArea.innerHTML = ''; };
         }
-
-        document.querySelectorAll('.format-rupiah').forEach(function(input) {
-            input.addEventListener('input', function(e) {
-                let value = this.value.replace(/[^0-9]/g, '');
-                if (value !== '') { this.value = new Intl.NumberFormat('id-ID').format(value); } else { this.value = ''; }
-            });
-        });
 
         <?php if (isset($_SESSION['flash_error'])): ?>Swal.fire({ icon: 'error', title: 'Oops...', text: '<?= $_SESSION['flash_error']; ?>', confirmButtonColor: '#00529C' });<?php unset($_SESSION['flash_error']); endif; ?>
         <?php if (isset($_SESSION['flash_success']) && !isset($_SESSION['print_daftar'])): ?>Swal.fire({ toast: true, position: 'top-end', showConfirmButton: false, timer: 3000, icon: 'success', title: '<?= $_SESSION['flash_success']; ?>' });<?php unset($_SESSION['flash_success']); endif; ?>
 
         <?php if (isset($_SESSION['print_daftar'])): $p = $_SESSION['print_daftar']; ?>
             Swal.fire({ toast: true, position: 'top-end', showConfirmButton: false, timer: 3000, icon: 'success', title: '<?= $_SESSION['flash_success'] ?? "Berhasil!" ?>' });
-            cetakPendaftaran('<?= $p['id'] ?>', '<?= date('d/m/Y') ?>', '<?= addslashes($p['nama']) ?>', '<?= addslashes($p['nik']) ?>', '<?= addslashes($p['layanan']) ?>', '<?= addslashes($p['cabang']) ?>');
+            cetakPendaftaran('<?= $p['id'] ?>', '<?= date('d M Y') ?>', '<?= addslashes($p['nama']) ?>', '<?= addslashes($p['nik']) ?>', '<?= addslashes($p['hp']) ?>', '<?= addslashes($p['layanan']) ?>', '<?= addslashes($p['cabang']) ?>');
         <?php unset($_SESSION['print_daftar'], $_SESSION['flash_success']); endif; ?>
     </script>
 </body>
